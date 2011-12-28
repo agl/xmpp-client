@@ -86,7 +86,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 
 	var domain string
 	for {
-		term.Prompt = "Account (i.e. user@example.com, enter to quit): "
+		term.SetPrompt("Account (i.e. user@example.com, enter to quit): ")
 		if config.Account, err = term.ReadLine(); err != nil || len(config.Account) == 0 {
 			return false
 		}
@@ -101,7 +101,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	}
 
 	var proxyStr string
-	term.Prompt = "Proxy (i.e socks5://127.0.0.1:9050, enter for none): "
+	term.SetPrompt("Proxy (i.e socks5://127.0.0.1:9050, enter for none): ")
 
 	for {
 		if proxyStr, err = term.ReadLine(); err != nil {
@@ -126,7 +126,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		config.Proxies = []string{proxyStr}
 
 		info(term, "Since you selected a proxy, we need to know the server and port to connect to as a SRV lookup would leak information every time.")
-		term.Prompt = "Server (i.e. xmpp.example.com, enter to lookup using unproxied DNS): "
+		term.SetPrompt("Server (i.e. xmpp.example.com, enter to lookup using unproxied DNS): ")
 		if config.Server, err = term.ReadLine(); err != nil {
 			return false
 		}
@@ -141,7 +141,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 			info(term, "Resolved " + config.Server + ":" + strconv.Itoa(config.Port))
 		} else {
 			for {
-				term.Prompt = "Port (enter for 5222): "
+				term.SetPrompt("Port (enter for 5222): ")
 				portStr, err := term.ReadLine()
 				if err != nil {
 					return false
@@ -158,7 +158,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 	}
 
-	term.Prompt = "File to import libotr private key from (enter to generate): "
+	term.SetPrompt("File to import libotr private key from (enter to generate): ")
 
 	var priv otr.PrivateKey
 	for {
@@ -185,6 +185,8 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 	}
 	config.PrivateKey = priv.Serialize(nil)
+
+	term.SetPrompt("> ")
 
 	return true
 }
