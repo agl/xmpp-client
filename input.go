@@ -22,6 +22,8 @@ var uiCommands = []uiCommand{
 	{"confirm", confirmCommand{}, "Confirm an inbound subscription request"},
 	{"deny", denyCommand{}, "Deny an inbound subscription request"},
 	{"help", helpCommand{}, "List known commands"},
+	{"paste", pasteCommand{}, "Start interpreting text verbatim"},
+	{"nopaste", noPasteCommand{}, "STop interpreting text verbatim"},
 	{"quit", quitCommand{}, "Quit the program"},
 	{"roster", rosterCommand{}, "Display the current roster"},
 	{"rosteredit", rosterEditCommand{}, "Write the roster to disk"},
@@ -54,6 +56,8 @@ type denyCommand struct {
 }
 
 type helpCommand struct{}
+type pasteCommand struct{}
+type noPasteCommand struct{}
 
 type quitCommand struct {
 }
@@ -268,16 +272,33 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 		i.commands.Insert([]byte(command.name))
 	}
 
-	i.term.AutoCompleteCallback = func(line []byte, pos, key int) ([]byte, int) {
+	autoCompleteCallback := func(line []byte, pos, key int) ([]byte, int) {
 		return i.AutoComplete(line, pos, key)
 	}
 
 	var lastTarget string
+	paste := false
 
 	for {
+		if paste {
+			i.term.AutoCompleteCallback = nil
+		} else {
+			i.term.AutoCompleteCallback = autoCompleteCallback
+		}
+
 		line, err := i.term.ReadLine()
 		if err != nil {
 			close(commandsChan)
+			return
+		}
+		if paste {
+			l := string(line)
+			if l == "/nopaste" {
+				paste = false
+			} else {
+				commandsChan <- msgCommand{lastTarget, string(line)}
+			}
+			continue
 		}
 		if len(line) == 0 {
 			continue
@@ -286,6 +307,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			cmd, err := parseCommand(uiCommands, []byte(line))
 			if len(err) != 0 {
 				alert(i.term, err)
+				continue
 			}
 			// authCommand is turned into authQACommand with an
 			// empty question.
@@ -297,6 +319,18 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			}
 			if _, ok := cmd.(helpCommand); ok {
 				i.showHelp()
+				continue
+			}
+			if _, ok := cmd.(pasteCommand); ok {
+				if len(lastTarget) == 0 {
+					alert(i.term, "Can't enter paste mode without a destination. Send a message to someone to select the destination")
+					continue
+				}
+				paste = true
+				continue
+			}
+			if _, ok := cmd.(noPasteCommand); ok {
+				paste = false
 				continue
 			}
 			if cmd != nil {
