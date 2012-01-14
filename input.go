@@ -353,7 +353,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 		i.lock.Unlock()
 
 		if len(lastTarget) == 0 {
-			warn(i.term, "Start typing an Jabber address and hit tab to send a message to someone")
+			warn(i.term, "Start typing a Jabber address and hit tab to send a message to someone")
 			continue
 		}
 		commandsChan <- msgCommand{lastTarget, string(line)}
