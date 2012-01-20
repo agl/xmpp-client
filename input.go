@@ -23,7 +23,7 @@ var uiCommands = []uiCommand{
 	{"deny", denyCommand{}, "Deny an inbound subscription request"},
 	{"help", helpCommand{}, "List known commands"},
 	{"paste", pasteCommand{}, "Start interpreting text verbatim"},
-	{"nopaste", noPasteCommand{}, "STop interpreting text verbatim"},
+	{"nopaste", noPasteCommand{}, "Stop interpreting text verbatim"},
 	{"quit", quitCommand{}, "Quit the program"},
 	{"roster", rosterCommand{}, "Display the current roster"},
 	{"rosteredit", rosterEditCommand{}, "Write the roster to disk"},
