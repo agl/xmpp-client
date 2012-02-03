@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/agl/xmpp"
-	"gocrypto.googlecode.com/git/otr"
 	"io"
 	"io/ioutil"
 	"net/url"
@@ -19,13 +18,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gocrypto.googlecode.com/git/otr"
 )
 
 var configFile *string = flag.String("config-file", "", "Location of the config file")
 var createAccount *bool = flag.Bool("create", false, "If true, attempt to create account")
 
 func terminalMessage(term *terminal.Terminal, color []byte, msg string) {
-	line := make([]byte, len(msg) + 16)[:0]
+	line := make([]byte, len(msg)+16)[:0]
 
 	line = append(line, ' ')
 	line = append(line, color...)
@@ -58,10 +59,10 @@ func alert(term *terminal.Terminal, msg string) {
 
 type Session struct {
 	account string
-	conn *xmpp.Conn
-	term *terminal.Terminal
-	roster []xmpp.RosterEntry
-	input Input
+	conn    *xmpp.Conn
+	term    *terminal.Terminal
+	roster  []xmpp.RosterEntry
+	input   Input
 	// conversations maps from a JID (without the resource) to an OTR
 	// conversation. (Note that unencrypted conversations also pass through
 	// OTR.)
@@ -70,8 +71,8 @@ type Session struct {
 	// presence state of that contact. It's used to deduping presence
 	// notifications.
 	knownStates map[string]string
-	privateKey *otr.PrivateKey
-	config *Config
+	privateKey  *otr.PrivateKey
+	config      *Config
 	// lastMessageFrom is the JID (without the resource) of the contact
 	// that we last received a message from.
 	lastMessageFrom string
@@ -141,7 +142,7 @@ func main() {
 
 	config, err := ParseConfig(*configFile)
 	if err != nil {
-		alert(term, "Failed to parse config file: " + err.Error())
+		alert(term, "Failed to parse config file: "+err.Error())
 		config = new(Config)
 		if !enroll(config, term) {
 			return
@@ -153,14 +154,14 @@ func main() {
 	password := config.Password
 	if len(password) == 0 {
 		if password, err = term.ReadPassword(fmt.Sprintf("Password for %s (will not be saved to disk): ", config.Account)); err != nil {
-			alert(term, "Failed to read password: " + err.Error())
+			alert(term, "Failed to read password: "+err.Error())
 			return
 		}
 	}
 
 	parts := strings.SplitN(config.Account, "@", 2)
 	if len(parts) != 2 {
-		alert(term, "invalid username (want user@domain): " + config.Account)
+		alert(term, "invalid username (want user@domain): "+config.Account)
 		return
 	}
 	user := parts[0]
@@ -176,7 +177,7 @@ func main() {
 		}
 		host, port, err := xmpp.Resolve(domain)
 		if err != nil {
-			alert(term, "Failed to resolve XMPP server: " + err.Error())
+			alert(term, "Failed to resolve XMPP server: "+err.Error())
 			return
 		}
 		addr = fmt.Sprintf("%s:%d", host, port)
@@ -186,40 +187,40 @@ func main() {
 	for i := len(config.Proxies) - 1; i >= 0; i-- {
 		u, err := url.Parse(config.Proxies[i])
 		if err != nil {
-			alert(term, "Failed to parse " + config.Proxies[i] + " as a URL: " + err.Error())
+			alert(term, "Failed to parse "+config.Proxies[i]+" as a URL: "+err.Error())
 			return
 		}
 		if dialer == nil {
 			dialer = proxy.Direct
 		}
 		if dialer, err = proxy.FromURL(u, dialer); err != nil {
-			alert(term, "Failed to parse " + config.Proxies[i] + " as a proxy: " + err.Error())
+			alert(term, "Failed to parse "+config.Proxies[i]+" as a proxy: "+err.Error())
 			return
 		}
 	}
 
 	xmppConfig := &xmpp.Config{
-		Log: &lineLogger{term, nil},
+		Log:    &lineLogger{term, nil},
 		Create: *createAccount,
 	}
 
 	if len(config.RawLogFile) > 0 {
-		rawLog, err := os.OpenFile(config.RawLogFile, os.O_CREATE | os.O_WRONLY | os.O_APPEND, 0600)
+		rawLog, err := os.OpenFile(config.RawLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
-			alert(term, "Failed to open raw log file: " + err.Error())
+			alert(term, "Failed to open raw log file: "+err.Error())
 			return
 		}
 
 		lock := new(sync.Mutex)
 		in := rawLogger{
-			out: rawLog,
+			out:    rawLog,
 			prefix: []byte("<- "),
-			lock: lock,
+			lock:   lock,
 		}
 		out := rawLogger{
-			out: rawLog,
+			out:    rawLog,
 			prefix: []byte("-> "),
-			lock: lock,
+			lock:   lock,
 		}
 		in.other, out.other = &out, &in
 
@@ -231,27 +232,27 @@ func main() {
 	}
 
 	if dialer != nil {
-		info(term, "Making connection to " + addr + " via proxy")
+		info(term, "Making connection to "+addr+" via proxy")
 		if xmppConfig.Conn, err = dialer.Dial("tcp", addr); err != nil {
-			alert(term, "Failed to connect via proxy: " + err.Error())
+			alert(term, "Failed to connect via proxy: "+err.Error())
 			return
 		}
 	}
 
 	conn, err := xmpp.Dial(addr, user, domain, password, xmppConfig)
 	if err != nil {
-		alert(term, "Failed to connect to XMPP server: " + err.Error())
+		alert(term, "Failed to connect to XMPP server: "+err.Error())
 		return
 	}
 
-	s := Session {
-		account: config.Account,
-		conn: conn,
-		term: term,
-		conversations: make(map[string]*otr.Conversation),
-		knownStates: make(map[string]string),
-		privateKey: new(otr.PrivateKey),
-		config: config,
+	s := Session{
+		account:           config.Account,
+		conn:              conn,
+		term:              term,
+		conversations:     make(map[string]*otr.Conversation),
+		knownStates:       make(map[string]string),
+		privateKey:        new(otr.PrivateKey),
+		config:            config,
 		pendingRosterChan: make(chan *rosterEdit),
 		pendingSubscribes: make(map[string]string),
 	}
@@ -260,14 +261,14 @@ func main() {
 	//var rosterReply chan xmpp.Stanza
 	rosterReply, _, err := s.conn.RequestRoster()
 	if err != nil {
-		alert(term, "Failed to request roster: " + err.Error())
+		alert(term, "Failed to request roster: "+err.Error())
 		return
 	}
 
 	conn.SignalPresence("")
 
 	s.input = Input{
-		term: term,
+		term:        term,
 		uidComplete: new(priorityList),
 	}
 	commandChan := make(chan interface{})
@@ -308,7 +309,7 @@ MainLoop:
 
 		case edit := <-s.pendingRosterChan:
 			if !edit.isComplete {
-				info(s.term, "Please edit " + edit.fileName + " and run /rostereditdone when complete")
+				info(s.term, "Please edit "+edit.fileName+" and run /rostereditdone when complete")
 				s.pendingRosterEdit = edit
 				continue
 			}
@@ -320,11 +321,11 @@ MainLoop:
 
 		case rosterStanza, ok := <-rosterReply:
 			if !ok {
-				alert(s.term, "Failed to read roster: " + err.Error())
+				alert(s.term, "Failed to read roster: "+err.Error())
 				return
 			}
 			if s.roster, err = xmpp.ParseRoster(rosterStanza); err != nil {
-				alert(s.term, "Failed to parse roster: " + err.Error())
+				alert(s.term, "Failed to parse roster: "+err.Error())
 				return
 			}
 			for _, entry := range s.roster {
@@ -343,7 +344,7 @@ MainLoop:
 			case versionCommand:
 				replyChan, cookie, err := s.conn.SendIQ(cmd.User, "get", xmpp.VersionQuery{})
 				if err != nil {
-					alert(s.term, "Error sending version request: " + err.Error())
+					alert(s.term, "Error sending version request: "+err.Error())
 					continue
 				}
 				s.timeouts[cookie] = time.Now().Add(5 * time.Second)
@@ -385,11 +386,11 @@ MainLoop:
 				}
 				go s.loadEditedRoster(*s.pendingRosterEdit)
 			case confirmCommand:
-				s.handleConfirmOrDeny(cmd.User, true /* confirm */)
+				s.handleConfirmOrDeny(cmd.User, true /* confirm */ )
 			case denyCommand:
-				s.handleConfirmOrDeny(cmd.User, false /* deny */)
+				s.handleConfirmOrDeny(cmd.User, false /* deny */ )
 			case addCommand:
-				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
+				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */ )
 			case msgCommand:
 				conversation, ok := s.conversations[cmd.to]
 				var msgs [][]byte
@@ -441,12 +442,12 @@ MainLoop:
 				reply := s.processIQ(stanza)
 				if reply == nil {
 					reply = xmpp.ErrorReply{
-						Type: "cancel",
+						Type:  "cancel",
 						Error: xmpp.ErrorBadRequest{},
 					}
 				}
 				if err := s.conn.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
-					alert(term, "Failed to send IQ message: " + err.Error())
+					alert(term, "Failed to send IQ message: "+err.Error())
 				}
 			default:
 				info(term, fmt.Sprintf("%s %s", rawStanza.Name, rawStanza.Value))
@@ -459,7 +460,7 @@ MainLoop:
 
 func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 	buf := bytes.NewBuffer(stanza.Query)
-	parser := xml.NewParser(buf)
+	parser := xml.NewDecoder(buf)
 	token, _ := parser.Token()
 	if token == nil {
 		return nil
@@ -474,24 +475,24 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 			Identities: []xmpp.DiscoveryIdentity{
 				{
 					Category: "client",
-					Type: "pc",
-					Name: s.config.Account,
+					Type:     "pc",
+					Name:     s.config.Account,
 				},
 			},
 		}
 	case "jabber:iq:version query":
 		return xmpp.VersionReply{
-			Name: "testing",
+			Name:    "testing",
 			Version: "version",
-			OS: "none",
+			OS:      "none",
 		}
 	case "jabber:iq:roster query":
 		if len(stanza.From) > 0 && stanza.From != s.account {
-			warn(s.term, "Ignoring roster IQ from bad address: " + stanza.From)
+			warn(s.term, "Ignoring roster IQ from bad address: "+stanza.From)
 			return nil
 		}
 		var roster xmpp.Roster
-		if err := xml.Unmarshal(bytes.NewBuffer(stanza.Query), &roster); err != nil || len(roster.Item) == 0 {
+		if err := xml.NewDecoder(bytes.NewBuffer(stanza.Query)).Decode(&roster); err != nil || len(roster.Item) == 0 {
 			warn(s.term, "Failed to parse roster push IQ")
 			return nil
 		}
@@ -521,7 +522,7 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 		}
 		return xmpp.EmptyReply{}
 	default:
-		info(s.term, "Unknown IQ: " + startElem.Name.Space + " " + startElem.Name.Local)
+		info(s.term, "Unknown IQ: "+startElem.Name.Space+" "+startElem.Name.Local)
 	}
 
 	return nil
@@ -530,7 +531,7 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
 	id, ok := s.pendingSubscribes[jid]
 	if !ok {
-		warn(s.term, "No pending subscription from " + jid)
+		warn(s.term, "No pending subscription from "+jid)
 		return
 	}
 	delete(s.pendingSubscribes, id)
@@ -539,7 +540,7 @@ func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
 		typ = "subscribed"
 	}
 	if err := s.conn.SendPresence(jid, typ, id); err != nil {
-		alert(s.term, "Error sending presence stanza: " + err.Error())
+		alert(s.term, "Error sending presence stanza: "+err.Error())
 	}
 }
 
@@ -617,7 +618,7 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 	case "subscribe":
 		// This is a subscription request
 		jid := xmpp.RemoveResourceFromJid(stanza.From)
-		info(s.term, jid + " wishes to see when you're online. Use '/confirm " + jid + "' to confirm (or likewise with /deny to decline)")
+		info(s.term, jid+" wishes to see when you're online. Use '/confirm "+jid+"' to confirm (or likewise with /deny to decline)")
 		s.pendingSubscribes[jid] = stanza.Id
 		s.input.AddUser(jid)
 		return
@@ -660,27 +661,27 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 	stanza, ok := <-ch
 	if !ok {
-		warn(s.term, "Version request to " + user + " timed out")
+		warn(s.term, "Version request to "+user+" timed out")
 		return
 	}
 	reply, ok := stanza.Value.(*xmpp.ClientIQ)
 	if !ok {
-		warn(s.term, "Version request to " + user + " resulted in bad reply type")
+		warn(s.term, "Version request to "+user+" resulted in bad reply type")
 		return
 	}
-	
+
 	if reply.Type == "error" {
-		warn(s.term, "Version request to " + user + " resulted in XMPP error")
+		warn(s.term, "Version request to "+user+" resulted in XMPP error")
 		return
 	} else if reply.Type != "result" {
-		warn(s.term, "Version request to " + user + " resulted in response with unknown type: " + reply.Type)
+		warn(s.term, "Version request to "+user+" resulted in response with unknown type: "+reply.Type)
 		return
 	}
 
 	buf := bytes.NewBuffer(reply.Query)
 	var versionReply xmpp.VersionReply
-	if err := xml.Unmarshal(buf, &versionReply); err != nil {
-		warn(s.term, "Failed to parse version reply from " + user + ": " + err.Error())
+	if err := xml.NewDecoder(buf).Decode(&versionReply); err != nil {
+		warn(s.term, "Failed to parse version reply from "+user+": "+err.Error())
 		return
 	}
 
@@ -692,21 +693,21 @@ func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 	// In case the editor rewrites the file, we work inside a temp
 	// directory.
-	dir, err := ioutil.TempDir("" /* system default temp dir */, "xmpp-client")
+	dir, err := ioutil.TempDir("", /* system default temp dir */ "xmpp-client")
 	if err != nil {
-		alert(s.term, "Failed to create temp dir to edit roster: " + err.Error())
+		alert(s.term, "Failed to create temp dir to edit roster: "+err.Error())
 		return
 	}
 
 	mode, err := os.Stat(dir)
-	if err != nil || mode.Mode() & os.ModePerm != 0700 {
+	if err != nil || mode.Mode()&os.ModePerm != 0700 {
 		panic("broken system libraries gave us an insecure temp dir")
 	}
 
 	fileName := filepath.Join(dir, "roster")
-	f, err := os.OpenFile(fileName, os.O_CREATE | os.O_WRONLY | os.O_TRUNC, 0600)
+	f, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
-		alert(s.term, "Failed to create temp file: " + err.Error())
+		alert(s.term, "Failed to create temp file: "+err.Error())
 		return
 	}
 
@@ -741,7 +742,7 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 		if len(item.Name) > 0 || len(item.Group) > 0 {
 			// We're going to put something else on the line to tab
 			// across to the next column.
-			for i := 0; i < tabs - tabsUsed; i++ {
+			for i := 0; i < tabs-tabsUsed; i++ {
 				line += "\t"
 			}
 		}
@@ -766,7 +767,7 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 
 	s.pendingRosterChan <- &rosterEdit{
 		fileName: fileName,
-		roster: roster,
+		roster:   roster,
 	}
 }
 
@@ -786,10 +787,10 @@ func escapeNonASCII(in string) string {
 		return in
 	}
 
-	out := make([]byte, 0, len(in) + 3*escapes)
+	out := make([]byte, 0, len(in)+3*escapes)
 	for i := 0; i < len(in); i++ {
 		if in[i] < 32 || in[i] > 126 || in[i] == '\\' {
-			out = append(out, '\\', 'x', hexTable[in[i] >> 4], hexTable[in[i] & 15])
+			out = append(out, '\\', 'x', hexTable[in[i]>>4], hexTable[in[i]&15])
 		} else {
 			out = append(out, in[i])
 		}
@@ -815,7 +816,7 @@ func unescapeNonASCII(in string) (string, error) {
 	out := make([]byte, 0, len(in))
 	for i := 0; i < len(in); i++ {
 		if in[i] == '\\' {
-			if len(in) <= i + 3 {
+			if len(in) <= i+3 {
 				return "", errors.New("truncated escape sequence at end: " + in)
 			}
 			if in[i+1] != 'x' {
@@ -838,7 +839,7 @@ func unescapeNonASCII(in string) (string, error) {
 func (s *Session) loadEditedRoster(edit rosterEdit) {
 	contents, err := ioutil.ReadFile(edit.fileName)
 	if err != nil {
-		alert(s.term, "Failed to load edited roster: " + err.Error())
+		alert(s.term, "Failed to load edited roster: "+err.Error())
 		return
 	}
 	os.Remove(edit.fileName)
@@ -922,7 +923,7 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 		}
 	}
 
-	NextAdd:
+NextAdd:
 	for jid, newEntry := range parsedRoster {
 		for _, entry := range edit.roster {
 			if entry.Jid == jid {
@@ -933,43 +934,43 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 	}
 
 	for _, jid := range toDelete {
-		info(s.term, "Deleting roster entry for " + jid)
-		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
+		info(s.term, "Deleting roster entry for "+jid)
+		_, _, err := s.conn.SendIQ("", /* to the server */ "set", xmpp.RosterRequest{
 			Item: xmpp.RosterRequestItem{
-				Jid: jid,
+				Jid:          jid,
 				Subscription: "remove",
 			},
 		})
 		if err != nil {
-			alert(s.term, "Failed to remove roster entry: " + err.Error())
+			alert(s.term, "Failed to remove roster entry: "+err.Error())
 		}
 	}
 
 	for _, entry := range toEdit {
-		info(s.term, "Updating roster entry for " + entry.Jid)
-		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
+		info(s.term, "Updating roster entry for "+entry.Jid)
+		_, _, err := s.conn.SendIQ("", /* to the server */ "set", xmpp.RosterRequest{
 			Item: xmpp.RosterRequestItem{
-				Jid: entry.Jid,
-				Name: entry.Name,
+				Jid:   entry.Jid,
+				Name:  entry.Name,
 				Group: entry.Group,
 			},
 		})
 		if err != nil {
-			alert(s.term, "Failed to update roster entry: " + err.Error())
+			alert(s.term, "Failed to update roster entry: "+err.Error())
 		}
 	}
 
 	for _, entry := range toAdd {
-		info(s.term, "Adding roster entry for " + entry.Jid)
-		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
+		info(s.term, "Adding roster entry for "+entry.Jid)
+		_, _, err := s.conn.SendIQ("", /* to the server */ "set", xmpp.RosterRequest{
 			Item: xmpp.RosterRequestItem{
-				Jid: entry.Jid,
-				Name: entry.Name,
+				Jid:   entry.Jid,
+				Name:  entry.Name,
 				Group: entry.Group,
 			},
 		})
 		if err != nil {
-			alert(s.term, "Failed to add roster entry: " + err.Error())
+			alert(s.term, "Failed to add roster entry: "+err.Error())
 		}
 	}
 
@@ -981,7 +982,7 @@ func setEqual(a, b []string) bool {
 		return false
 	}
 
-	EachValue:
+EachValue:
 	for _, v := range a {
 		for _, v2 := range b {
 			if v == v2 {
@@ -995,11 +996,11 @@ func setEqual(a, b []string) bool {
 }
 
 type rawLogger struct {
-	out io.Writer
+	out    io.Writer
 	prefix []byte
-	lock *sync.Mutex
-	other *rawLogger
-	buf []byte
+	lock   *sync.Mutex
+	other  *rawLogger
+	buf    []byte
 }
 
 func (r *rawLogger) Write(data []byte) (int, error) {
@@ -1014,7 +1015,7 @@ func (r *rawLogger) Write(data []byte) (int, error) {
 	for len(data) > 0 {
 		if newLine := bytes.IndexByte(data, '\n'); newLine >= 0 {
 			r.buf = append(r.buf, data[:newLine]...)
-			data = data[newLine + 1:]
+			data = data[newLine+1:]
 		} else {
 			r.buf = append(r.buf, data...)
 			data = nil
@@ -1046,14 +1047,14 @@ func (r *rawLogger) flush() error {
 
 type lineLogger struct {
 	term *terminal.Terminal
-	buf []byte
+	buf  []byte
 }
 
 func (l *lineLogger) logLines(in []byte) []byte {
 	for len(in) > 0 {
 		if newLine := bytes.IndexByte(in, '\n'); newLine >= 0 {
 			info(l.term, string(in[:newLine]))
-			in = in[newLine + 1:]
+			in = in[newLine+1:]
 		} else {
 			break
 		}
