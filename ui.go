@@ -613,6 +613,14 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	s.term.Write(line)
 }
 
+func isAwayStatus(status string) bool {
+	switch status {
+	case "xa", "away":
+		return true
+	}
+	return false
+}
+
 func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 	switch stanza.Type {
 	case "subscribe":
@@ -628,13 +636,12 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 		return
 	}
 
-	// Skip people who are away
-	switch stanza.Show {
-	case "xa", "away":
+	from := xmpp.RemoveResourceFromJid(stanza.From)
+	if _, ok := s.knownStates[from]; !ok && isAwayStatus(stanza.Show) {
+		// Skip people who are initially away.
 		return
 	}
 
-	from := xmpp.RemoveResourceFromJid(stanza.From)
 	if lastState, ok := s.knownStates[from]; ok && lastState == stanza.Show {
 		// No change. Ignore.
 		return
