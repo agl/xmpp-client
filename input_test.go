@@ -1,8 +1,8 @@
 package main
 
 import (
-	"testing"
 	"reflect"
+	"testing"
 )
 
 const (
@@ -11,7 +11,7 @@ const (
 )
 
 var priorityListTests = []struct {
-	op int
+	op      int
 	in, out string
 }{
 	{opFind, "a", "anchor"},
@@ -35,7 +35,7 @@ var priorityListTests = []struct {
 
 func TestPriorityList(t *testing.T) {
 	var pl priorityList
-	
+
 	for _, word := range []string{"bop", "boom", "bob", "anvil", "anchor"} {
 		pl.Insert([]byte(word))
 	}
@@ -70,11 +70,11 @@ type bCommand struct {
 	C string
 }
 
-var parseForCompletionTests = []struct{
-	in string
-	ok bool
+var parseForCompletionTests = []struct {
+	in             string
+	ok             bool
 	before, prefix string
-	isCommand bool
+	isCommand      bool
 }{
 	{"", false, "", "", false},
 	{"/", true, "/", "", true},
@@ -118,9 +118,9 @@ func TestParseCommandForCompletion(t *testing.T) {
 	}
 }
 
-var parseCommandTests = []struct{
-	in string
-	ok bool
+var parseCommandTests = []struct {
+	in  string
+	ok  bool
 	out interface{}
 }{
 	{"/", false, nil},

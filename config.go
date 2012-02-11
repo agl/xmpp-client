@@ -17,21 +17,21 @@ import (
 )
 
 type Config struct {
-	filename string `json:"-"`
-	Account string
-	Server string `json:",omitempty"`
-	Proxies []string `json:",omitempty"`
-	Password string `json:",omitempty"`
-	Port int `json:",omitempty"`
-	PrivateKey []byte
+	filename          string `json:"-"`
+	Account           string
+	Server            string   `json:",omitempty"`
+	Proxies           []string `json:",omitempty"`
+	Password          string   `json:",omitempty"`
+	Port              int      `json:",omitempty"`
+	PrivateKey        []byte
 	KnownFingerprints []KnownFingerprint
-	RawLogFile string `json:",omitempty"`
+	RawLogFile        string `json:",omitempty"`
 }
 
 type KnownFingerprint struct {
-	UserId string
+	UserId         string
 	FingerprintHex string
-	fingerprint []byte `json:"-"`
+	fingerprint    []byte `json:"-"`
 }
 
 func ParseConfig(filename string) (c *Config, err error) {
@@ -93,7 +93,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 
 		parts := strings.SplitN(config.Account, "@", 2)
 		if len(parts) != 2 {
-			alert(term, "invalid username (want user@domain): " + config.Account)
+			alert(term, "invalid username (want user@domain): "+config.Account)
 			continue
 		}
 		domain = parts[1]
@@ -112,11 +112,11 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 		u, err := url.Parse(proxyStr)
 		if err != nil {
-			alert(term, "Failed to parse " + proxyStr + " as a URL: " + err.Error())
+			alert(term, "Failed to parse "+proxyStr+" as a URL: "+err.Error())
 			continue
 		}
 		if _, err = proxy.FromURL(u, proxy.Direct); err != nil {
-			alert(term, "Failed to parse " + proxyStr + " as a proxy: " + err.Error())
+			alert(term, "Failed to parse "+proxyStr+" as a proxy: "+err.Error())
 			continue
 		}
 		break
@@ -134,11 +134,11 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 			var port uint16
 			info(term, "Performing SRV lookup")
 			if config.Server, port, err = xmpp.Resolve(domain); err != nil {
-				alert(term, "SRV lookup failed: " + err.Error())
+				alert(term, "SRV lookup failed: "+err.Error())
 				return false
 			}
 			config.Port = int(port)
-			info(term, "Resolved " + config.Server + ":" + strconv.Itoa(config.Port))
+			info(term, "Resolved "+config.Server+":"+strconv.Itoa(config.Port))
 		} else {
 			for {
 				term.SetPrompt("Port (enter for 5222): ")
@@ -169,7 +169,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		if len(importFile) > 0 {
 			privKeyBytes, err := ioutil.ReadFile(importFile)
 			if err != nil {
-				alert(term, "Failed to open private key file: " + err.Error())
+				alert(term, "Failed to open private key file: "+err.Error())
 				continue
 			}
 

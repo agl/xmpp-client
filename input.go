@@ -2,10 +2,10 @@ package main
 
 import (
 	"bytes"
+	"exp/terminal"
 	"reflect"
 	"strconv"
 	"strings"
-	"exp/terminal"
 	"sync"
 )
 
@@ -62,9 +62,9 @@ type noPasteCommand struct{}
 type quitCommand struct {
 }
 
-type rosterCommand struct { }
-type rosterEditCommand struct { }
-type rosterEditDoneCommand struct { }
+type rosterCommand struct{}
+type rosterEditCommand struct{}
+type rosterEditDoneCommand struct{}
 
 type otrCommand struct {
 	User string "uid"
@@ -244,12 +244,12 @@ func parseCommand(commands []uiCommand, line []byte) (interface{}, string) {
 }
 
 type Input struct {
-	term *terminal.Terminal
-	uidComplete *priorityList
-	uids []string
-	commands *priorityList
+	term                 *terminal.Terminal
+	uidComplete          *priorityList
+	uids                 []string
+	commands             *priorityList
 	lastKeyWasCompletion bool
-	lock sync.Mutex
+	lock                 sync.Mutex
 }
 
 func (i *Input) AddUser(uid string) {
