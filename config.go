@@ -25,7 +25,8 @@ type Config struct {
 	Port              int      `json:",omitempty"`
 	PrivateKey        []byte
 	KnownFingerprints []KnownFingerprint
-	RawLogFile        string `json:",omitempty"`
+	RawLogFile        string   `json:",omitempty"`
+	NotifyCommand     []string `json:",omitempty"`
 }
 
 type KnownFingerprint struct {

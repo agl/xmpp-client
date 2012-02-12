@@ -8,17 +8,18 @@ import (
 	"exp/terminal"
 	"flag"
 	"fmt"
-	"github.com/agl/xmpp"
 	"io"
 	"io/ioutil"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/agl/xmpp"
 	"gocrypto.googlecode.com/git/otr"
 )
 
@@ -88,6 +89,9 @@ type Session struct {
 	// pendingSubscribes maps JID with pending subscription requests to the
 	// ID if the iq for the reply.
 	pendingSubscribes map[string]string
+	// lastActionTime is the time at which the user last entered a command,
+	// or was last notified.
+	lastActionTime time.Time
 }
 
 // rosterEdit contains information about a pending roster edit. Roster edits
@@ -255,6 +259,7 @@ func main() {
 		config:            config,
 		pendingRosterChan: make(chan *rosterEdit),
 		pendingSubscribes: make(map[string]string),
+		lastActionTime:    time.Now(),
 	}
 	info(term, "Fetching roster")
 
@@ -338,6 +343,7 @@ MainLoop:
 				warn(term, "Exiting because command channel closed")
 				break MainLoop
 			}
+			s.lastActionTime = time.Now()
 			switch cmd := cmd.(type) {
 			case quitCommand:
 				break MainLoop
@@ -611,6 +617,27 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	line = append(line, out...)
 	line = append(line, '\n')
 	s.term.Write(line)
+	s.maybeNotify()
+}
+
+func (s *Session) maybeNotify() {
+	now := time.Now()
+	notifyTime := s.lastActionTime.Add(60 * time.Second)
+	if now.Before(notifyTime) {
+		return
+	}
+
+	s.lastActionTime = now
+	if len(s.config.NotifyCommand) == 0 {
+		return
+	}
+
+	cmd := exec.Command(s.config.NotifyCommand[0], s.config.NotifyCommand[1:]...)
+	go func() {
+		if err := cmd.Run(); err != nil {
+			alert(s.term, "Failed to run notify command: "+err.Error())
+		}
+	}()
 }
 
 func isAwayStatus(status string) bool {
