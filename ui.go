@@ -285,6 +285,8 @@ func main() {
 	s.privateKey.Parse(config.PrivateKey)
 	s.timeouts = make(map[xmpp.Cookie]time.Time)
 
+	info(term, fmt.Sprintf("Your fingerprint is %x", s.privateKey.Fingerprint()))
+
 	ticker := time.NewTicker(1 * time.Second)
 
 MainLoop:
