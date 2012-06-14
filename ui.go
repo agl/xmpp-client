@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agl/xmpp"
 	"code.google.com/p/go.crypto/otr"
 	"code.google.com/p/go.crypto/ssh/terminal"
+	"github.com/agl/xmpp"
 )
 
 var configFile *string = flag.String("config-file", "", "Location of the config file")
@@ -394,11 +394,11 @@ MainLoop:
 				}
 				go s.loadEditedRoster(*s.pendingRosterEdit)
 			case confirmCommand:
-				s.handleConfirmOrDeny(cmd.User, true /* confirm */ )
+				s.handleConfirmOrDeny(cmd.User, true /* confirm */)
 			case denyCommand:
-				s.handleConfirmOrDeny(cmd.User, false /* deny */ )
+				s.handleConfirmOrDeny(cmd.User, false /* deny */)
 			case addCommand:
-				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */ )
+				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
 			case msgCommand:
 				conversation, ok := s.conversations[cmd.to]
 				var msgs [][]byte
@@ -729,7 +729,7 @@ func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 	// In case the editor rewrites the file, we work inside a temp
 	// directory.
-	dir, err := ioutil.TempDir("", /* system default temp dir */ "xmpp-client")
+	dir, err := ioutil.TempDir("" /* system default temp dir */, "xmpp-client")
 	if err != nil {
 		alert(s.term, "Failed to create temp dir to edit roster: "+err.Error())
 		return
@@ -971,7 +971,7 @@ NextAdd:
 
 	for _, jid := range toDelete {
 		info(s.term, "Deleting roster entry for "+jid)
-		_, _, err := s.conn.SendIQ("", /* to the server */ "set", xmpp.RosterRequest{
+		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
 			Item: xmpp.RosterRequestItem{
 				Jid:          jid,
 				Subscription: "remove",
@@ -984,7 +984,7 @@ NextAdd:
 
 	for _, entry := range toEdit {
 		info(s.term, "Updating roster entry for "+entry.Jid)
-		_, _, err := s.conn.SendIQ("", /* to the server */ "set", xmpp.RosterRequest{
+		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
 			Item: xmpp.RosterRequestItem{
 				Jid:   entry.Jid,
 				Name:  entry.Name,
@@ -998,7 +998,7 @@ NextAdd:
 
 	for _, entry := range toAdd {
 		info(s.term, "Adding roster entry for "+entry.Jid)
-		_, _, err := s.conn.SendIQ("", /* to the server */ "set", xmpp.RosterRequest{
+		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
 			Item: xmpp.RosterRequestItem{
 				Jid:   entry.Jid,
 				Name:  entry.Name,
