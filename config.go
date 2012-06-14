@@ -7,13 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"exp/proxy"
-	"exp/terminal"
-	"github.com/agl/xmpp"
-	"gocrypto.googlecode.com/git/otr"
 	"io/ioutil"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"code.google.com/p/go.crypto/otr"
+	"code.google.com/p/go.crypto/ssh/terminal"
+	"github.com/agl/xmpp"
 )
 
 type Config struct {

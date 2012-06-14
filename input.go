@@ -2,11 +2,12 @@ package main
 
 import (
 	"bytes"
-	"exp/terminal"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+
+	"code.google.com/p/go.crypto/ssh/terminal"
 )
 
 type uiCommand struct {

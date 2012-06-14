@@ -5,7 +5,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"exp/proxy"
-	"exp/terminal"
 	"flag"
 	"fmt"
 	"io"
@@ -20,7 +19,8 @@ import (
 	"time"
 
 	"github.com/agl/xmpp"
-	"gocrypto.googlecode.com/git/otr"
+	"code.google.com/p/go.crypto/otr"
+	"code.google.com/p/go.crypto/ssh/terminal"
 )
 
 var configFile *string = flag.String("config-file", "", "Location of the config file")
@@ -559,7 +559,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		s.conversations[from] = conversation
 	}
 
-	out, encrypted, change, toSend, err := conversation.Process([]byte(stanza.Body))
+	out, encrypted, change, toSend, err := conversation.Receive([]byte(stanza.Body))
 	if err != nil {
 		alert(s.term, "While processing message from "+from+": "+err.Error())
 	}
