@@ -172,8 +172,11 @@ func main() {
 	domain := parts[1]
 
 	var addr string
+	addrTrusted := false
+
 	if len(config.Server) > 0 && config.Port > 0 {
 		addr = fmt.Sprintf("%s:%d", config.Server, config.Port)
+		addrTrusted = true
 	} else {
 		if len(config.Proxies) > 0 {
 			alert(term, "Cannot connect via a proxy without Server and Port being set in the config file as an SRV lookup would leak information.")
@@ -204,8 +207,9 @@ func main() {
 	}
 
 	xmppConfig := &xmpp.Config{
-		Log:    &lineLogger{term, nil},
-		Create: *createAccount,
+		Log:            &lineLogger{term, nil},
+		Create:         *createAccount,
+		TrustedAddress: addrTrusted,
 	}
 
 	if len(config.RawLogFile) > 0 {
