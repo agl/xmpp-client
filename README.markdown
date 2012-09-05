@@ -1,5 +1,11 @@
-xmpp-client
-===========
+xmpp-client setup
+=================
+
+go get
+go build
+
+xmpp-client use
+===============
 
 xmpp-client is a simple XMPP client written in pure Go. It's a terminal program and so probably doesn't work on Windows.
 
