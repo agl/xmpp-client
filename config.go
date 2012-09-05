@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"exp/proxy"
 	"io/ioutil"
 	"net/url"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 
 	"code.google.com/p/go.crypto/otr"
 	"code.google.com/p/go.crypto/ssh/terminal"
+	"code.google.com/p/go.net/proxy"
 	"github.com/agl/xmpp"
 )
 
