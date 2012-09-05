@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/xml"
 	"errors"
-	"exp/proxy"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +19,7 @@ import (
 
 	"code.google.com/p/go.crypto/otr"
 	"code.google.com/p/go.crypto/ssh/terminal"
+	"code.google.com/p/go.net/proxy"
 	"github.com/agl/xmpp"
 )
 
