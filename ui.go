@@ -352,6 +352,12 @@ MainLoop:
 			s.lastActionTime = time.Now()
 			switch cmd := cmd.(type) {
 			case quitCommand:
+				for to, conversation := range s.conversations {
+					msgs := conversation.End()
+					for _, msg := range msgs {
+						s.conn.Send(to, string(msg))
+					}
+				}
 				break MainLoop
 			case versionCommand:
 				replyChan, cookie, err := s.conn.SendIQ(cmd.User, "get", xmpp.VersionQuery{})
@@ -421,7 +427,18 @@ MainLoop:
 					s.conn.Send(cmd.to, string(msg))
 				}
 			case otrCommand:
-				s.conn.Send(string(cmd.User), string(otr.QueryMessage))
+				s.conn.Send(string(cmd.User), otr.QueryMessage)
+			case endOTRCommand:
+				to := string(cmd.User)
+				conversation, ok := s.conversations[to]
+				if !ok {
+					alert(s.term, "No secure session established")
+					break
+				}
+				msgs := conversation.End()
+				for _, msg := range msgs {
+					s.conn.Send(to, string(msg))
+				}
 			case authQACommand:
 				to := string(cmd.User)
 				conversation, ok := s.conversations[to]
@@ -568,6 +585,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	out, encrypted, change, toSend, err := conversation.Receive([]byte(stanza.Body))
 	if err != nil {
 		alert(s.term, "While processing message from "+from+": "+err.Error())
+		s.conn.Send(stanza.From, otr.ErrorPrefix + "Error processing message")
 	}
 	for _, msg := range toSend {
 		s.conn.Send(stanza.From, string(msg))
@@ -589,7 +607,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 			}
 		}
 	case otr.ConversationEnded:
-		info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /endotr", from))
+		info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /endotr %s", from, from))
 	case otr.SMPSecretNeeded:
 		info(s.term, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /smp", from))
 		if question := conversation.SMPQuestion(); len(question) > 0 {

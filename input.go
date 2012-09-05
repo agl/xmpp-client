@@ -22,6 +22,7 @@ var uiCommands = []uiCommand{
 	{"authqa", authQACommand{}, "Authentiate a secure peer with a question and answer"},
 	{"confirm", confirmCommand{}, "Confirm an inbound subscription request"},
 	{"deny", denyCommand{}, "Deny an inbound subscription request"},
+	{"endotr", endOTRCommand{}, "End an OTR session"},
 	{"help", helpCommand{}, "List known commands"},
 	{"paste", pasteCommand{}, "Start interpreting text verbatim"},
 	{"nopaste", noPasteCommand{}, "Stop interpreting text verbatim"},
@@ -53,6 +54,10 @@ type confirmCommand struct {
 }
 
 type denyCommand struct {
+	User string "uid"
+}
+
+type endOTRCommand struct {
 	User string "uid"
 }
 
