@@ -585,7 +585,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	out, encrypted, change, toSend, err := conversation.Receive([]byte(stanza.Body))
 	if err != nil {
 		alert(s.term, "While processing message from "+from+": "+err.Error())
-		s.conn.Send(stanza.From, otr.ErrorPrefix + "Error processing message")
+		s.conn.Send(stanza.From, otr.ErrorPrefix+"Error processing message")
 	}
 	for _, msg := range toSend {
 		s.conn.Send(stanza.From, string(msg))
