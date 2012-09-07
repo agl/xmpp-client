@@ -28,6 +28,7 @@ type Config struct {
 	KnownFingerprints []KnownFingerprint
 	RawLogFile        string   `json:",omitempty"`
 	NotifyCommand     []string `json:",omitempty"`
+	UseTor            bool
 }
 
 type KnownFingerprint struct {
@@ -100,6 +101,15 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 		domain = parts[1]
 		break
+	}
+
+	term.SetPrompt("Use Tor?: ")
+	if useTorQuery, err := term.ReadLine(); err != nil || useTorQuery != "yes" {
+		info(term, "Not using Tor...")
+		config.UseTor = false
+	} else {
+		info(term, "Using Tor...")
+		config.UseTor = true
 	}
 
 	term.SetPrompt("File to import libotr private key from (enter to generate): ")
