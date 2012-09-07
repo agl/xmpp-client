@@ -27,10 +27,10 @@ var uiCommands = []uiCommand{
 	{"roster", rosterCommand{}, "Display the current roster"},
 	{"rosteredit", rosterEditCommand{}, "Write the roster to disk"},
 	{"rostereditdone", rosterEditDoneCommand{}, "Load the edited roster from disk"},
-	{"otr_auth", authCommand{}, "Authenticate a secure peer with a mutual, shared secret"},
-	{"otr_authqa", authQACommand{}, "Authenticate a secure peer with a question and answer"},
-	{"otr_end", endOTRCommand{}, "End an OTR session"},
-	{"otr_start", otrCommand{}, "Start an OTR session with the given user"},
+	{"otr-auth", authCommand{}, "Authenticate a secure peer with a mutual, shared secret"},
+	{"otr-authqa", authQACommand{}, "Authenticate a secure peer with a question and answer"},
+	{"otr-end", endOTRCommand{}, "End an OTR session"},
+	{"otr-start", otrCommand{}, "Start an OTR session with the given user"},
 	{"version", versionCommand{}, "Ask a Jabber client for its version"},
 }
 
