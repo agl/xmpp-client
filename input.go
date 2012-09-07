@@ -18,11 +18,8 @@ type uiCommand struct {
 
 var uiCommands = []uiCommand{
 	{"add", addCommand{}, "Request a subscription to another user's presence"},
-	{"auth", authCommand{}, "Authentiate a secure peer with a mutual, shared secret"},
-	{"authqa", authQACommand{}, "Authentiate a secure peer with a question and answer"},
 	{"confirm", confirmCommand{}, "Confirm an inbound subscription request"},
 	{"deny", denyCommand{}, "Deny an inbound subscription request"},
-	{"endotr", endOTRCommand{}, "End an OTR session"},
 	{"help", helpCommand{}, "List known commands"},
 	{"paste", pasteCommand{}, "Start interpreting text verbatim"},
 	{"nopaste", noPasteCommand{}, "Stop interpreting text verbatim"},
@@ -30,7 +27,10 @@ var uiCommands = []uiCommand{
 	{"roster", rosterCommand{}, "Display the current roster"},
 	{"rosteredit", rosterEditCommand{}, "Write the roster to disk"},
 	{"rostereditdone", rosterEditDoneCommand{}, "Load the edited roster from disk"},
-	{"startotr", otrCommand{}, "Start an OTR session with the given user"},
+	{"otr_auth", authCommand{}, "Authentiate a secure peer with a mutual, shared secret"},
+	{"otr_authqa", authQACommand{}, "Authentiate a secure peer with a question and answer"},
+	{"otr_end", endOTRCommand{}, "End an OTR session"},
+	{"otr_start", otrCommand{}, "Start an OTR session with the given user"},
 	{"version", versionCommand{}, "Ask a Jabber client for its version"},
 }
 
