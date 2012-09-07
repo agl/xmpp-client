@@ -28,6 +28,7 @@ type Config struct {
 	KnownFingerprints []KnownFingerprint
 	RawLogFile        string   `json:",omitempty"`
 	NotifyCommand     []string `json:",omitempty"`
+	UseTor            bool
 }
 
 type KnownFingerprint struct {
@@ -102,6 +103,54 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		break
 	}
 
+	term.SetPrompt("Use Tor?: ")
+	if useTorQuery, err := term.ReadLine(); err != nil || useTorQuery != "yes" {
+		info(term, "Not using Tor...")
+		config.UseTor = false
+	} else {
+		info(term, "Using Tor...")
+		config.UseTor = true
+	}
+
+	term.SetPrompt("File to import libotr private key from (enter to generate): ")
+
+	var priv otr.PrivateKey
+	for {
+		importFile, err := term.ReadLine()
+		if err != nil {
+			return false
+		}
+		if len(importFile) > 0 {
+			privKeyBytes, err := ioutil.ReadFile(importFile)
+			if err != nil {
+				alert(term, "Failed to open private key file: "+err.Error())
+				continue
+			}
+
+			if !priv.Import(privKeyBytes) {
+				alert(term, "Failed to parse libotr private key file (the parser is pretty simple I'm afraid)")
+				continue
+			}
+			break
+		} else {
+			info(term, "Generating private key...")
+			priv.Generate(rand.Reader)
+			break
+		}
+	}
+	config.PrivateKey = priv.Serialize(nil)
+
+	// If we find ourselves here - we want to autoconfigure everything quickly
+	if domain == "jabber.ccc.de" && config.UseTor == true {
+		const torProxyURL = "socks5://127.0.0.1:9050"
+		info(term, "It appears that you are using a well known server and we will use its Tor hidden service to connect.")
+		config.Server = "okj7xc6j2szr2y75.onion"
+		config.Port = 5222
+		config.Proxies = []string{torProxyURL}
+		term.SetPrompt("> ")
+		return true
+	}
+
 	var proxyStr string
 	term.SetPrompt("Proxy (i.e socks5://127.0.0.1:9050, enter for none): ")
 
@@ -159,34 +208,6 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 			}
 		}
 	}
-
-	term.SetPrompt("File to import libotr private key from (enter to generate): ")
-
-	var priv otr.PrivateKey
-	for {
-		importFile, err := term.ReadLine()
-		if err != nil {
-			return false
-		}
-		if len(importFile) > 0 {
-			privKeyBytes, err := ioutil.ReadFile(importFile)
-			if err != nil {
-				alert(term, "Failed to open private key file: "+err.Error())
-				continue
-			}
-
-			if !priv.Import(privKeyBytes) {
-				alert(term, "Failed to parse libotr private key file (the parser is pretty simple I'm afraid)")
-				continue
-			}
-			break
-		} else {
-			info(term, "Generating private key...")
-			priv.Generate(rand.Reader)
-			break
-		}
-	}
-	config.PrivateKey = priv.Serialize(nil)
 
 	term.SetPrompt("> ")
 

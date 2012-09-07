@@ -598,7 +598,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		info(s.term, fmt.Sprintf("  session id: %x", conversation.SSID))
 		knownUserId := s.config.UserIdForFingerprint(fpr)
 		if len(knownUserId) == 0 {
-			alert(s.term, "Fingerprint is unknown. You should use /auth or /authqa to verify their identity")
+			alert(s.term, "Fingerprint is unknown. You should use /otr_auth or /otr_authqa to verify their identity")
 		} else {
 			if knownUserId == from {
 				info(s.term, "Fingerprint is verified")
@@ -609,7 +609,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	case otr.ConversationEnded:
 		info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /endotr %s", from, from))
 	case otr.SMPSecretNeeded:
-		info(s.term, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /smp", from))
+		info(s.term, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr_auth user secret", from))
 		if question := conversation.SMPQuestion(); len(question) > 0 {
 			info(s.term, fmt.Sprintf("%s asks: %s", from, question))
 		}
