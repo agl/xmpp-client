@@ -140,6 +140,17 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	}
 	config.PrivateKey = priv.Serialize(nil)
 
+	// If we find ourselves here - we want to autoconfigure everything quickly
+	if domain == "jabber.ccc.de" && config.UseTor == true {
+		const torProxyURL = "socks5://127.0.0.1:9050"
+		info(term, "It appears that you are using a well known server and we will use its Tor hidden service to connect.")
+		config.Server = "okj7xc6j2szr2y75.onion"
+		config.Port = 5222
+		config.Proxies = []string{torProxyURL}
+		term.SetPrompt("> ")
+		return true
+	}
+
 	var proxyStr string
 	term.SetPrompt("Proxy (i.e socks5://127.0.0.1:9050, enter for none): ")
 
