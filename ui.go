@@ -607,7 +607,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 			}
 		}
 	case otr.ConversationEnded:
-		info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /endotr %s", from, from))
+		info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr_end %s", from, from))
 	case otr.SMPSecretNeeded:
 		info(s.term, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from))
 		if question := conversation.SMPQuestion(); len(question) > 0 {
