@@ -631,10 +631,8 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	} else {
 		line = append(line, s.term.Escape.Red...)
 	}
-	if s.lastMessageFrom != from {
-		line = append(line, []byte(from)...)
-		s.lastMessageFrom = from
-	}
+
+	line = append(line, []byte(from)...)
 	line = append(line, ':')
 	line = append(line, s.term.Escape.Reset...)
 	line = append(line, ' ')
