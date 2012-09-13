@@ -103,6 +103,14 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		break
 	}
 
+	term.SetPrompt("Enable debug logging to /tmp/xmpp-client-debug.log? ")
+	if debugLog, err := term.ReadLine(); err != nil || debugLog != "yes" {
+		info(term, "Not enabling debug logging...")
+	} else {
+		info(term, "Debug logging enabled...")
+		config.RawLogFile = "/tmp/xmpp-client-debug.log"
+	}
+
 	term.SetPrompt("Use Tor?: ")
 	if useTorQuery, err := term.ReadLine(); err != nil || useTorQuery != "yes" {
 		info(term, "Not using Tor...")
