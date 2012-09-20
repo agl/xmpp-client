@@ -593,7 +593,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	switch change {
 	case otr.NewKeys:
 		fpr := conversation.TheirPublicKey.Fingerprint()
-		info(s.term, fmt.Sprintf("New OTR session with %s established", from))
+		info(s.term, fmt.Sprintf("New OTR session with %s established at %s", from, time.Now().Format(time.RubyDate)))
 		info(s.term, fmt.Sprintf("  their fingerprint: %x", fpr))
 		info(s.term, fmt.Sprintf("  session id: %x", conversation.SSID))
 		knownUserId := s.config.UserIdForFingerprint(fpr)
@@ -632,10 +632,9 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		line = append(line, s.term.Escape.Red...)
 	}
 
-	line = append(line, []byte(from)...)
-	line = append(line, ':')
+	t := fmt.Sprintf("(%s) %s: ", time.Now().Format(time.RubyDate), from)
+	line = append(line, []byte(t)...)
 	line = append(line, s.term.Escape.Reset...)
-	line = append(line, ' ')
 	line = append(line, out...)
 	line = append(line, '\n')
 	s.term.Write(line)
