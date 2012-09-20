@@ -29,9 +29,11 @@ var createAccount *bool = flag.Bool("create", false, "If true, attempt to create
 func terminalMessage(term *terminal.Terminal, color []byte, msg string) {
 	line := make([]byte, len(msg)+16)[:0]
 
+	t := fmt.Sprintf("(%s): ", time.Now().Format(time.RubyDate))
 	line = append(line, ' ')
 	line = append(line, color...)
 	line = append(line, '*')
+	line = append(line, []byte(t)...)
 	line = append(line, term.Escape.Reset...)
 	line = append(line, ' ')
 
