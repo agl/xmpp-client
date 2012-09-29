@@ -609,7 +609,26 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 			}
 		}
 	case otr.ConversationEnded:
-		info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
+		// This is probably unsafe without a policy that _forces_ crypto to
+		// _everyone_ by default and refuses plaintext. Users might not notice
+		// their buddy has ended a session, which they have also ended, and they
+		// might send a plain text message. So we should ensure they _want_ this
+		// feature and have set it as an explicit preference.
+		if s.config.OTRAutoTearDown {
+			if (s.conversations[from] != nil) {
+				alert(s.term, "No secure session established; unable to automatically tear down OTR conversation.")
+				break
+			} else {
+				info(s.term, fmt.Sprintf("%s has ended the secure conversation.", from))
+				msgs := conversation.End()
+				for _, msg := range msgs {
+					s.conn.Send(from, string(msg))
+				}
+				info(s.term, fmt.Sprintf("We have automatically ended our secure sesssion with %s", from))
+			}
+		} else {
+			info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
+		}
 	case otr.SMPSecretNeeded:
 		info(s.term, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from))
 		if question := conversation.SMPQuestion(); len(question) > 0 {

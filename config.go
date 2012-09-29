@@ -29,6 +29,7 @@ type Config struct {
 	RawLogFile        string   `json:",omitempty"`
 	NotifyCommand     []string `json:",omitempty"`
 	UseTor            bool
+	OTRAutoTearDown   bool
 }
 
 type KnownFingerprint struct {
@@ -118,6 +119,15 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	} else {
 		info(term, "Using Tor...")
 		config.UseTor = true
+	}
+
+	term.SetPrompt("Automatically end OTR sessions when your partner does?: ")
+	if autoEndOTRSession, err := term.ReadLine(); err != nil || autoEndOTRSession != "yes" {
+		info(term, "Not enabling OTRAutoTearDown...")
+		config.OTRAutoTearDown = false
+	} else {
+		info(term, "OTRAutoTearDown enabled...")
+		config.OTRAutoTearDown = true
 	}
 
 	term.SetPrompt("File to import libotr private key from (enter to generate): ")
