@@ -575,6 +575,12 @@ func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
 
 func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	from := xmpp.RemoveResourceFromJid(stanza.From)
+
+	if stanza.Type == "error" {
+		alert(s.term, "Error reported from "+from+": "+stanza.Body)
+		return
+	}
+
 	conversation, ok := s.conversations[from]
 	if !ok {
 		conversation = new(otr.Conversation)
