@@ -18,17 +18,20 @@ import (
 )
 
 type Config struct {
-	filename          string `json:"-"`
-	Account           string
-	Server            string   `json:",omitempty"`
-	Proxies           []string `json:",omitempty"`
-	Password          string   `json:",omitempty"`
-	Port              int      `json:",omitempty"`
-	PrivateKey        []byte
-	KnownFingerprints []KnownFingerprint
-	RawLogFile        string   `json:",omitempty"`
-	NotifyCommand     []string `json:",omitempty"`
-	UseTor            bool
+	filename            string `json:"-"`
+	Account             string
+	Server              string   `json:",omitempty"`
+	Proxies             []string `json:",omitempty"`
+	Password            string   `json:",omitempty"`
+	Port                int      `json:",omitempty"`
+	PrivateKey          []byte
+	KnownFingerprints   []KnownFingerprint
+	RawLogFile          string   `json:",omitempty"`
+	NotifyCommand       []string `json:",omitempty"`
+	UseTor              bool
+	OTRAutoTearDown     bool
+	OTRAutoAppendTag    bool
+	OTRAutoStartSession bool
 }
 
 type KnownFingerprint struct {
@@ -120,6 +123,15 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		config.UseTor = true
 	}
 
+	term.SetPrompt("Automatically end OTR sessions when your partner does?: ")
+	if autoEndOTRSession, err := term.ReadLine(); err != nil || autoEndOTRSession != "yes" {
+		info(term, "Not enabling OTRAutoTearDown...")
+		config.OTRAutoTearDown = false
+	} else {
+		info(term, "OTRAutoTearDown enabled...")
+		config.OTRAutoTearDown = true
+	}
+
 	term.SetPrompt("File to import libotr private key from (enter to generate): ")
 
 	var priv otr.PrivateKey
@@ -147,6 +159,10 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 	}
 	config.PrivateKey = priv.Serialize(nil)
+
+	term.SetPrompt("Automatically configuring the rest of OTR for you...")
+	config.OTRAutoAppendTag = true
+	config.OTRAutoStartSession = true
 
 	// If we find ourselves here - we want to autoconfigure everything quickly
 	if domain == "jabber.ccc.de" && config.UseTor == true {
