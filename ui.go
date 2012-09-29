@@ -228,6 +228,7 @@ func main() {
 		Log:            &lineLogger{term, nil},
 		Create:         *createAccount,
 		TrustedAddress: addrTrusted,
+		Archive:        false,
 	}
 
 	if len(config.RawLogFile) > 0 {
