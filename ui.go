@@ -653,7 +653,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 				for _, msg := range msgs {
 					s.conn.Send(from, string(msg))
 				}
-				info(s.term, fmt.Sprintf("We have automatically ended our secure sesssion with %s", from))
+				info(s.term, fmt.Sprintf("Secure session with %s has been automatically ended. Messages will be sent in the clear until another OTR session is established.", from)
 			}
 		} else {
 			info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
