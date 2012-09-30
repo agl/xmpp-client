@@ -123,15 +123,6 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		config.UseTor = true
 	}
 
-	term.SetPrompt("Automatically end OTR sessions when your partner does?: ")
-	if autoEndOTRSession, err := term.ReadLine(); err != nil || autoEndOTRSession != "yes" {
-		info(term, "Not enabling OTRAutoTearDown...")
-		config.OTRAutoTearDown = false
-	} else {
-		info(term, "OTRAutoTearDown enabled...")
-		config.OTRAutoTearDown = true
-	}
-
 	term.SetPrompt("File to import libotr private key from (enter to generate): ")
 
 	var priv otr.PrivateKey
@@ -163,6 +154,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	term.SetPrompt("Automatically configuring the rest of OTR for you...")
 	config.OTRAutoAppendTag = true
 	config.OTRAutoStartSession = true
+	config.OTRAutoTearDown = false
 
 	// If we find ourselves here - we want to autoconfigure everything quickly
 	if domain == "jabber.ccc.de" && config.UseTor == true {
