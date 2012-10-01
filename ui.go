@@ -676,29 +676,29 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		return
 	}
 
-	var detectedSafeOTR bool = false
+	detectedSafeOTR := 0
 	// We don't need to alert about tags encoded inside of messages that are
 	// already encrypted with OTR
 	if !encrypted {
 		if bytes.Contains(out, FirstWhiteSpaceBaseTag) && bytes.Contains(out, SecondWhiteSpaceBaseTag) {
 			if bytes.HasSuffix(out, WhiteSpaceTagv1) {
 				info(s.term, fmt.Sprintf("%s appears to support OTRv1. You should encourage them to upgrade their OTR client!", from))
-				detectedSafeOTR = false
+				detectedSafeOTR = 1
 			}
 			if bytes.HasSuffix(out, WhiteSpaceTagv2) {
-				info(s.term, fmt.Sprintf("%s appears to support OTRv2. You should enable it with /otr-start %s", from, from))
-				detectedSafeOTR = true
+				detectedSafeOTR = 2
 			}
 			if bytes.HasSuffix(out, WhiteSpaceTagv3) {
-				info(s.term, fmt.Sprintf("%s appears to support OTRv3. You should enable it with /otr-start %s", from, from))
-				detectedSafeOTR = true
+				detectedSafeOTR = 3
 			}
 		}
 	}
 
-	if s.config.OTRAutoStartSession && detectedSafeOTR {
-		info(s.term, fmt.Sprintf("%s appears to support OTR. We are attempting to start an OTR session with them.", from))
+	if s.config.OTRAutoStartSession && (detectedSafeOTR == 2 || detectedSafeOTR == 3) {
+		info(s.term, fmt.Sprintf("%s appears to support OTRv%d. We are attempting to start an OTR session with them.", from, detectedSafeOTR))
 		s.conn.Send(from, otr.QueryMessage)
+	} else if s.config.OTRAutoStartSession && detectedSafeOTR == 1 {
+		info(s.term, fmt.Sprintf("%s appears to support OTRv%d. You should encourage them to upgrade their OTR client!", from, detectedSafeOTR))
 	}
 
 	var line []byte
