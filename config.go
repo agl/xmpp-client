@@ -151,7 +151,6 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	}
 	config.PrivateKey = priv.Serialize(nil)
 
-	term.SetPrompt("Automatically configuring the rest of OTR for you...")
 	config.OTRAutoAppendTag = true
 	config.OTRAutoStartSession = true
 	config.OTRAutoTearDown = false
