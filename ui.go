@@ -26,12 +26,30 @@ import (
 var configFile *string = flag.String("config-file", "", "Location of the config file")
 var createAccount *bool = flag.Bool("create", false, "If true, attempt to create account")
 
+// WhiteSpaceTag is appended to plaintext messages to signal the remote client
+// about our OTR support; this tag indicates someone is willing to use OTR
+var FirstWhiteSpaceBaseTag = []byte("\x20\x09\x20\x20\x09\x09\x09\x09")
+var SecondWhiteSpaceBaseTag = []byte("\x20\x09\x20\x09\x20\x09\x20\x20")
+
+// Only use the next tag to encourage people to upgrade
+var WhiteSpaceTagv1 = []byte("\x20\x09\x20\x09\x20\x20\x09\x20")
+
+// These versions of the protocol are reasonable to detect and use
+var WhiteSpaceTagv2 = []byte("\x20\x20\x09\x09\x20\x20\x09\x20")
+var WhiteSpaceTagv3 = []byte("\x20\x20\x09\x09\x20\x20\x09\x09")
+
+// These are how we tag outgoing messages
+var OurDefaultBaseTag = append(FirstWhiteSpaceBaseTag, SecondWhiteSpaceBaseTag...)
+var OurDefaultTag = append(OurDefaultBaseTag, WhiteSpaceTagv2...)
+
 func terminalMessage(term *terminal.Terminal, color []byte, msg string) {
 	line := make([]byte, len(msg)+16)[:0]
 
+	t := fmt.Sprintf("(%s): ", time.Now().Format(time.RubyDate))
 	line = append(line, ' ')
 	line = append(line, color...)
 	line = append(line, '*')
+	line = append(line, []byte(t)...)
 	line = append(line, term.Escape.Reset...)
 	line = append(line, ' ')
 
@@ -413,19 +431,25 @@ MainLoop:
 			case msgCommand:
 				conversation, ok := s.conversations[cmd.to]
 				var msgs [][]byte
+				var message = []byte(cmd.msg)
+				// Automatically tag all outgoing plaintext messages with OurDefaultTag
+				// This indicates that we support OTR and it will help convince other
+				// clients to start an OTR conversation with us.
+				if config.OTRAutoAppendTag && (!bytes.Contains(message, []byte("?OTR"))) {
+					message = append(message, OurDefaultTag...)
+				}
 				if ok {
 					var err error
-					msgs, err = conversation.Send([]byte(cmd.msg))
+					msgs, err = conversation.Send(message)
 					if err != nil {
 						alert(s.term, err.Error())
 						break
 					}
 				} else {
-					msgs = [][]byte{[]byte(cmd.msg)}
+					msgs = [][]byte{[]byte(message)}
 				}
-
-				for _, msg := range msgs {
-					s.conn.Send(cmd.to, string(msg))
+				for _, message := range msgs {
+					s.conn.Send(cmd.to, string(message))
 				}
 			case otrCommand:
 				s.conn.Send(string(cmd.User), otr.QueryMessage)
@@ -614,7 +638,26 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 			}
 		}
 	case otr.ConversationEnded:
-		info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
+		// This is probably unsafe without a policy that _forces_ crypto to
+		// _everyone_ by default and refuses plaintext. Users might not notice
+		// their buddy has ended a session, which they have also ended, and they
+		// might send a plain text message. So we should ensure they _want_ this
+		// feature and have set it as an explicit preference.
+		if s.config.OTRAutoTearDown {
+			if s.conversations[from] == nil {
+				alert(s.term, "No secure session established; unable to automatically tear down OTR conversation.")
+				break
+			} else {
+				info(s.term, fmt.Sprintf("%s has ended the secure conversation.", from))
+				msgs := conversation.End()
+				for _, msg := range msgs {
+					s.conn.Send(from, string(msg))
+				}
+				info(s.term, fmt.Sprintf("Secure session with %s has been automatically ended. Messages will be sent in the clear until another OTR session is established.", from))
+			}
+		} else {
+			info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
+		}
 	case otr.SMPSecretNeeded:
 		info(s.term, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from))
 		if question := conversation.SMPQuestion(); len(question) > 0 {
@@ -628,8 +671,34 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		}
 		s.config.Save()
 	}
+
 	if len(out) == 0 {
 		return
+	}
+
+	detectedSafeOTR := 0
+	// We don't need to alert about tags encoded inside of messages that are
+	// already encrypted with OTR
+	if !encrypted {
+		if bytes.Contains(out, FirstWhiteSpaceBaseTag) && bytes.Contains(out, SecondWhiteSpaceBaseTag) {
+			if bytes.HasSuffix(out, WhiteSpaceTagv1) {
+				info(s.term, fmt.Sprintf("%s appears to support OTRv1. You should encourage them to upgrade their OTR client!", from))
+				detectedSafeOTR = 1
+			}
+			if bytes.HasSuffix(out, WhiteSpaceTagv2) {
+				detectedSafeOTR = 2
+			}
+			if bytes.HasSuffix(out, WhiteSpaceTagv3) {
+				detectedSafeOTR = 3
+			}
+		}
+	}
+
+	if s.config.OTRAutoStartSession && (detectedSafeOTR == 2 || detectedSafeOTR == 3) {
+		info(s.term, fmt.Sprintf("%s appears to support OTRv%d. We are attempting to start an OTR session with them.", from, detectedSafeOTR))
+		s.conn.Send(from, otr.QueryMessage)
+	} else if s.config.OTRAutoStartSession && detectedSafeOTR == 1 {
+		info(s.term, fmt.Sprintf("%s appears to support OTRv%d. You should encourage them to upgrade their OTR client!", from, detectedSafeOTR))
 	}
 
 	var line []byte

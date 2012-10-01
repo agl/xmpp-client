@@ -18,17 +18,20 @@ import (
 )
 
 type Config struct {
-	filename          string `json:"-"`
-	Account           string
-	Server            string   `json:",omitempty"`
-	Proxies           []string `json:",omitempty"`
-	Password          string   `json:",omitempty"`
-	Port              int      `json:",omitempty"`
-	PrivateKey        []byte
-	KnownFingerprints []KnownFingerprint
-	RawLogFile        string   `json:",omitempty"`
-	NotifyCommand     []string `json:",omitempty"`
-	UseTor            bool
+	filename            string `json:"-"`
+	Account             string
+	Server              string   `json:",omitempty"`
+	Proxies             []string `json:",omitempty"`
+	Password            string   `json:",omitempty"`
+	Port                int      `json:",omitempty"`
+	PrivateKey          []byte
+	KnownFingerprints   []KnownFingerprint
+	RawLogFile          string   `json:",omitempty"`
+	NotifyCommand       []string `json:",omitempty"`
+	UseTor              bool
+	OTRAutoTearDown     bool
+	OTRAutoAppendTag    bool
+	OTRAutoStartSession bool
 }
 
 type KnownFingerprint struct {
@@ -147,6 +150,10 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 	}
 	config.PrivateKey = priv.Serialize(nil)
+
+	config.OTRAutoAppendTag = true
+	config.OTRAutoStartSession = true
+	config.OTRAutoTearDown = false
 
 	// If we find ourselves here - we want to autoconfigure everything quickly
 	if domain == "jabber.ccc.de" && config.UseTor == true {
