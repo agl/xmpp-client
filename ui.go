@@ -26,6 +26,18 @@ import (
 var configFile *string = flag.String("config-file", "", "Location of the config file")
 var createAccount *bool = flag.Bool("create", false, "If true, attempt to create account")
 
+// OTRWhitespaceTagStart may be appended to plaintext messages to signal to the
+// remote client that we support OTR. It should be followed by one of the
+// version specific tags, below. See "Tagged plaintext messages" in
+// http://www.cypherpunks.ca/otr/Protocol-v3-4.0.0.html.
+var OTRWhitespaceTagStart = []byte("\x20\x09\x20\x20\x09\x09\x09\x09\x20\x09\x20\x09\x20\x09\x20\x20")
+
+var OTRWhiteSpaceTagV1 = []byte("\x20\x09\x20\x09\x20\x20\x09\x20")
+var OTRWhiteSpaceTagV2 = []byte("\x20\x20\x09\x09\x20\x20\x09\x20")
+var OTRWhiteSpaceTagV3 = []byte("\x20\x20\x09\x09\x20\x20\x09\x09")
+
+var OTRWhitespaceTag = append(OTRWhitespaceTagStart, OTRWhiteSpaceTagV2...)
+
 func terminalMessage(term *terminal.Terminal, color []byte, msg string) {
 	line := make([]byte, len(msg)+16)[:0]
 
@@ -33,7 +45,7 @@ func terminalMessage(term *terminal.Terminal, color []byte, msg string) {
 	line = append(line, color...)
 	line = append(line, '*')
 	line = append(line, term.Escape.Reset...)
-	line = append(line, ' ')
+	line = append(line, []byte(fmt.Sprintf(" (%s) ", time.Now().Format(time.Kitchen)))...)
 
 	for _, c := range msg {
 		if (c < 32 || c > 126) && c != '\t' {
@@ -413,19 +425,25 @@ MainLoop:
 			case msgCommand:
 				conversation, ok := s.conversations[cmd.to]
 				var msgs [][]byte
+				message := []byte(cmd.msg)
+				// Automatically tag all outgoing plaintext
+				// messages with a whitespace tag that
+				// indicates that we support OTR.
+				if config.OTRAutoAppendTag && (!bytes.Contains(message, []byte("?OTR"))) {
+					message = append(message, OTRWhitespaceTag...)
+				}
 				if ok {
 					var err error
-					msgs, err = conversation.Send([]byte(cmd.msg))
+					msgs, err = conversation.Send(message)
 					if err != nil {
 						alert(s.term, err.Error())
 						break
 					}
 				} else {
-					msgs = [][]byte{[]byte(cmd.msg)}
+					msgs = [][]byte{[]byte(message)}
 				}
-
-				for _, msg := range msgs {
-					s.conn.Send(cmd.to, string(msg))
+				for _, message := range msgs {
+					s.conn.Send(cmd.to, string(message))
 				}
 			case otrCommand:
 				s.conn.Send(string(cmd.User), otr.QueryMessage)
@@ -614,7 +632,26 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 			}
 		}
 	case otr.ConversationEnded:
-		info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
+		// This is probably unsafe without a policy that _forces_ crypto to
+		// _everyone_ by default and refuses plaintext. Users might not notice
+		// their buddy has ended a session, which they have also ended, and they
+		// might send a plain text message. So we should ensure they _want_ this
+		// feature and have set it as an explicit preference.
+		if s.config.OTRAutoTearDown {
+			if s.conversations[from] == nil {
+				alert(s.term, fmt.Sprintf("No secure session established; unable to automatically tear down OTR conversation with %s.", from))
+				break
+			} else {
+				info(s.term, fmt.Sprintf("%s has ended the secure conversation.", from))
+				msgs := conversation.End()
+				for _, msg := range msgs {
+					s.conn.Send(from, string(msg))
+				}
+				info(s.term, fmt.Sprintf("Secure session with %s has been automatically ended. Messages will be sent in the clear until another OTR session is established.", from))
+			}
+		} else {
+			info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
+		}
 	case otr.SMPSecretNeeded:
 		info(s.term, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from))
 		if question := conversation.SMPQuestion(); len(question) > 0 {
@@ -628,8 +665,36 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		}
 		s.config.Save()
 	}
+
 	if len(out) == 0 {
 		return
+	}
+
+	detectedOTRVersion := 0
+	// We don't need to alert about tags encoded inside of messages that are
+	// already encrypted with OTR
+	whitespaceTagLength := len(OTRWhitespaceTagStart) + len(OTRWhiteSpaceTagV1)
+	if !encrypted && len(out) >= whitespaceTagLength {
+		whitespaceTag := out[len(out)-whitespaceTagLength:]
+		if bytes.Equal(whitespaceTag[:len(OTRWhitespaceTagStart)], OTRWhitespaceTagStart) {
+			if bytes.HasSuffix(whitespaceTag, OTRWhiteSpaceTagV1) {
+				info(s.term, fmt.Sprintf("%s appears to support OTRv1. You should encourage them to upgrade their OTR client!", from))
+				detectedOTRVersion = 1
+			}
+			if bytes.HasSuffix(whitespaceTag, OTRWhiteSpaceTagV2) {
+				detectedOTRVersion = 2
+			}
+			if bytes.HasSuffix(whitespaceTag, OTRWhiteSpaceTagV3) {
+				detectedOTRVersion = 3
+			}
+		}
+	}
+
+	if s.config.OTRAutoStartSession && detectedOTRVersion >= 2 {
+		info(s.term, fmt.Sprintf("%s appears to support OTRv%d. We are attempting to start an OTR session with them.", from, detectedOTRVersion))
+		s.conn.Send(from, otr.QueryMessage)
+	} else if s.config.OTRAutoStartSession && detectedOTRVersion == 1 {
+		info(s.term, fmt.Sprintf("%s appears to support OTRv%d. You should encourage them to upgrade their OTR client!", from, detectedOTRVersion))
 	}
 
 	var line []byte
