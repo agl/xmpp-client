@@ -447,6 +447,8 @@ MainLoop:
 				}
 			case otrCommand:
 				s.conn.Send(string(cmd.User), otr.QueryMessage)
+			case otrInfoCommand:
+				info(term, fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()))
 			case endOTRCommand:
 				to := string(cmd.User)
 				conversation, ok := s.conversations[to]
