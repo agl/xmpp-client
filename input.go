@@ -31,6 +31,7 @@ var uiCommands = []uiCommand{
 	{"otr-authqa", authQACommand{}, "Authenticate a secure peer with a question and answer"},
 	{"otr-end", endOTRCommand{}, "End an OTR session"},
 	{"otr-start", otrCommand{}, "Start an OTR session with the given user"},
+	{"otr-info", otrInfoCommand{}, "Print OTR information such as OTR fingerprint"},
 	{"version", versionCommand{}, "Ask a Jabber client for its version"},
 }
 
@@ -75,6 +76,8 @@ type rosterEditDoneCommand struct{}
 type otrCommand struct {
 	User string "uid"
 }
+
+type otrInfoCommand struct{}
 
 type versionCommand struct {
 	User string "uid"
