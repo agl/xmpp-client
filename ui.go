@@ -455,18 +455,17 @@ MainLoop:
 				s.conn.Send(string(cmd.User), otr.QueryMessage)
 			case otrInfoCommand:
 				info(term, fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()))
-				for to := range s.conversations {
-					conversation, ok := s.conversations[to]
-					if conversation.IsEncrypted() && ok {
+				for to, conversation := range s.conversations {
+					if conversation.IsEncrypted() {
 						fpr := conversation.TheirPublicKey.Fingerprint()
-						verifiedFpr := len(s.config.UserIdForFingerprint(fpr))
+						isVerifiedFingerprint := len(s.config.UserIdForFingerprint(fpr)) > 0
 						info(s.term, fmt.Sprintf("Secure session with %s underway:", to))
-						info(s.term, fmt.Sprintf("  Fingerprint for %s: %x", to, fpr))
-						info(s.term, fmt.Sprintf("  Session  ID for %s: %x", to, conversation.SSID))
-						if verifiedFpr != 0 {
-							info(s.term, fmt.Sprintf("  Identity  for %s is verified", to))
+						info(s.term, fmt.Sprintf("  Fingerprint   for %s: %x", to, fpr))
+						info(s.term, fmt.Sprintf("  Session  ID   for %s: %x", to, conversation.SSID))
+						if isVerifiedFingerprint {
+							info(s.term, fmt.Sprintf("  Identity key  for %s is verified", to))
 						} else {
-							alert(s.term, fmt.Sprintf("  Identity  for %s is not verified. You should use /otr-auth or /otr-authqa to verify their identity", to))
+							alert(s.term, fmt.Sprintf("  Identity key  for %s is not verified. You should use /otr-auth or /otr-authqa to verify their identity", to))
 						}
 					}
 				}
