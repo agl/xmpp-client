@@ -455,6 +455,21 @@ MainLoop:
 				s.conn.Send(string(cmd.User), otr.QueryMessage)
 			case otrInfoCommand:
 				info(term, fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()))
+				for to := range s.conversations {
+					conversation, ok := s.conversations[to]
+					if conversation.IsEncrypted() && ok {
+						fpr := conversation.TheirPublicKey.Fingerprint()
+						verifiedFpr := len(s.config.UserIdForFingerprint(fpr))
+						info(s.term, fmt.Sprintf("Secure session with %s underway:", to))
+						info(s.term, fmt.Sprintf("  Fingerprint for %s: %x", to, fpr))
+						info(s.term, fmt.Sprintf("  Session  ID for %s: %x", to, conversation.SSID))
+						if verifiedFpr != 0 {
+							info(s.term, fmt.Sprintf("  Identity  for %s is verified", to))
+						} else {
+							warn(s.term, fmt.Sprintf("  Identity  for %s is not verified", to))
+						}
+					}
+				}
 			case endOTRCommand:
 				to := string(cmd.User)
 				conversation, ok := s.conversations[to]
