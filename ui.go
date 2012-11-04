@@ -466,7 +466,7 @@ MainLoop:
 						if verifiedFpr != 0 {
 							info(s.term, fmt.Sprintf("  Identity  for %s is verified", to))
 						} else {
-							warn(s.term, fmt.Sprintf("  Identity  for %s is not verified", to))
+							alert(s.term, fmt.Sprintf("  Identity  for %s is not verified. You should use /otr-auth or /otr-authqa to verify their identity", to))
 						}
 					}
 				}
