@@ -1,8 +1,7 @@
 xmpp-client setup
 =================
 
-go get
-go build
+    go get github.com/agl/xmpp-client
 
 xmpp-client use
 ===============
