@@ -429,10 +429,10 @@ MainLoop:
 				// Automatically tag all outgoing plaintext
 				// messages with a whitespace tag that
 				// indicates that we support OTR.
-				if config.OTRAutoAppendTag && (!bytes.Contains(message, []byte("?OTR"))) {
-					if !conversation.IsEncrypted() {
-						message = append(message, OTRWhitespaceTag...)
-					}
+				if config.OTRAutoAppendTag &&
+					!bytes.Contains(message, []byte("?OTR")) &&
+					(!ok || !conversation.IsEncrypted()) {
+					message = append(message, OTRWhitespaceTag...)
 				}
 				if ok {
 					var err error
