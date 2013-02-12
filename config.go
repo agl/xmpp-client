@@ -28,6 +28,7 @@ type Config struct {
 	KnownFingerprints   []KnownFingerprint
 	RawLogFile          string   `json:",omitempty"`
 	NotifyCommand       []string `json:",omitempty"`
+	Bell                bool
 	UseTor              bool
 	OTRAutoTearDown     bool
 	OTRAutoAppendTag    bool
