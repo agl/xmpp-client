@@ -727,6 +727,9 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	line = append(line, s.term.Escape.Reset...)
 	line = append(line, out...)
 	line = append(line, '\n')
+	if s.config.Bell {
+		line = append(line, '\a')
+	}
 	s.term.Write(line)
 	s.maybeNotify()
 }
