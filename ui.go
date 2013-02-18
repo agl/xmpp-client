@@ -763,6 +763,8 @@ func isAwayStatus(status string) bool {
 }
 
 func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
+	gone := false
+
 	switch stanza.Type {
 	case "subscribe":
 		// This is a subscription request
@@ -771,6 +773,8 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 		s.pendingSubscribes[jid] = stanza.Id
 		s.input.AddUser(jid)
 		return
+	case "unavailable":
+		gone = true
 	case "":
 		break
 	default:
@@ -778,16 +782,25 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 	}
 
 	from := xmpp.RemoveResourceFromJid(stanza.From)
-	if _, ok := s.knownStates[from]; !ok && isAwayStatus(stanza.Show) {
-		// Skip people who are initially away.
-		return
-	}
 
-	if lastState, ok := s.knownStates[from]; ok && lastState == stanza.Show {
-		// No change. Ignore.
-		return
+	if gone {
+		if _, ok := s.knownStates[from]; !ok {
+			// They've gone, but we never knew they were online.
+			return
+		}
+		delete(s.knownStates, from)
+	} else {
+		if _, ok := s.knownStates[from]; !ok && isAwayStatus(stanza.Show) {
+			// Skip people who are initially away.
+			return
+		}
+
+		if lastState, ok := s.knownStates[from]; ok && lastState == stanza.Show {
+			// No change. Ignore.
+			return
+		}
+		s.knownStates[from] = stanza.Show
 	}
-	s.knownStates[from] = stanza.Show
 
 	var line []byte
 	line = append(line, s.term.Escape.Magenta...)
@@ -795,7 +808,9 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 	line = append(line, ':')
 	line = append(line, s.term.Escape.Reset...)
 	line = append(line, ' ')
-	if len(stanza.Show) > 0 {
+	if gone {
+		line = append(line, []byte("offline")...)
+	} else if len(stanza.Show) > 0 {
 		line = append(line, []byte(stanza.Show)...)
 	} else {
 		line = append(line, []byte("online")...)
