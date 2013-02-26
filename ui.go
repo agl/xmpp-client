@@ -38,6 +38,19 @@ var OTRWhiteSpaceTagV3 = []byte("\x20\x20\x09\x09\x20\x20\x09\x09")
 
 var OTRWhitespaceTag = append(OTRWhitespaceTagStart, OTRWhiteSpaceTagV2...)
 
+// appendTerminalEscaped acts like append(), but breaks terminal escape
+// sequences that may be in msg.
+func appendTerminalEscaped(out, msg []byte) []byte {
+	for _, c := range msg {
+		if c < 32 && c != '\t' {
+			out = append(out, '?')
+		} else {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func terminalMessage(term *terminal.Terminal, color []byte, msg string) {
 	line := make([]byte, len(msg)+16)[:0]
 
@@ -46,14 +59,7 @@ func terminalMessage(term *terminal.Terminal, color []byte, msg string) {
 	line = append(line, '*')
 	line = append(line, term.Escape.Reset...)
 	line = append(line, []byte(fmt.Sprintf(" (%s) ", time.Now().Format(time.Kitchen)))...)
-
-	for _, c := range msg {
-		if (c < 32 || c > 126) && c != '\t' {
-			line = append(line, '?')
-		} else {
-			line = append(line, byte(c))
-		}
-	}
+	line = appendTerminalEscaped(line, []byte(msg))
 	line = append(line, '\n')
 	term.Write(line)
 }
@@ -725,7 +731,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	t := fmt.Sprintf("(%s) %s: ", time.Now().Format(time.RubyDate), from)
 	line = append(line, []byte(t)...)
 	line = append(line, s.term.Escape.Reset...)
-	line = append(line, out...)
+	line = appendTerminalEscaped(line, out)
 	line = append(line, '\n')
 	if s.config.Bell {
 		line = append(line, '\a')
