@@ -167,6 +167,16 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		return true
 	}
 
+	if domain == "riseup.net" && config.UseTor == true {
+		const torProxyURL = "socks5://127.0.0.1:9050"
+		info(term, "It appears that you are using a well known server and we will use its Tor hidden service to connect.")
+		config.Server = "ztmc4p37hvues222.onion"
+		config.Port = 5222
+		config.Proxies = []string{torProxyURL}
+		term.SetPrompt("> ")
+		return true
+	}
+
 	var proxyStr string
 	term.SetPrompt("Proxy (i.e socks5://127.0.0.1:9050, enter for none): ")
 
