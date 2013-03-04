@@ -156,21 +156,17 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	config.OTRAutoStartSession = true
 	config.OTRAutoTearDown = false
 
-	// If we find ourselves here - we want to autoconfigure everything quickly
-	if domain == "jabber.ccc.de" && config.UseTor == true {
-		const torProxyURL = "socks5://127.0.0.1:9050"
-		info(term, "It appears that you are using a well known server and we will use its Tor hidden service to connect.")
-		config.Server = "okj7xc6j2szr2y75.onion"
-		config.Port = 5222
-		config.Proxies = []string{torProxyURL}
-		term.SetPrompt("> ")
-		return true
+	// List well known Tor hidden services.
+	knownTorDomain := map[string]string{
+		"jabber.ccc.de": "okj7xc6j2szr2y75.onion",
+		"riseup.net":    "ztmc4p37hvues222.onion",
 	}
 
-	if domain == "riseup.net" && config.UseTor == true {
+	// Autoconfigure well known Tor hidden services.
+	if hiddenService, ok := knownTorDomain[domain]; ok && config.UseTor {
 		const torProxyURL = "socks5://127.0.0.1:9050"
 		info(term, "It appears that you are using a well known server and we will use its Tor hidden service to connect.")
-		config.Server = "ztmc4p37hvues222.onion"
+		config.Server = hiddenService
 		config.Port = 5222
 		config.Proxies = []string{torProxyURL}
 		term.SetPrompt("> ")
