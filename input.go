@@ -33,6 +33,7 @@ var uiCommands = []uiCommand{
 	{"otr-start", otrCommand{}, "Start an OTR session with the given user"},
 	{"otr-info", otrInfoCommand{}, "Print OTR information such as OTR fingerprint"},
 	{"version", versionCommand{}, "Ask a Jabber client for its version"},
+	{"statusupdates", toggleStatusUpdatesCommand{}, "Toggle if status updates are displayed"},
 }
 
 type addCommand struct {
@@ -87,6 +88,8 @@ type msgCommand struct {
 	to  string
 	msg string
 }
+
+type toggleStatusUpdatesCommand struct{}
 
 func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefix []byte, isCommand, ok bool) {
 	if len(line) == 0 || line[0] != '/' {
