@@ -422,6 +422,15 @@ MainLoop:
 					continue
 				}
 				go s.loadEditedRoster(*s.pendingRosterEdit)
+			case toggleStatusUpdatesCommand:
+				s.config.HideStatusUpdates = !s.config.HideStatusUpdates
+				s.config.Save()
+				// Tell the user the current state of the statuses
+				if s.config.HideStatusUpdates {
+					info(s.term, "Status updated disabled")
+				} else {
+					info(s.term, "Status updates enabled")
+				}
 			case confirmCommand:
 				s.handleConfirmOrDeny(cmd.User, true /* confirm */)
 			case denyCommand:
@@ -808,23 +817,25 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 		s.knownStates[from] = stanza.Show
 	}
 
-	var line []byte
-	line = append(line, s.term.Escape.Magenta...)
-	line = append(line, []byte(from)...)
-	line = append(line, ':')
-	line = append(line, s.term.Escape.Reset...)
-	line = append(line, ' ')
-	if gone {
-		line = append(line, []byte("offline")...)
-	} else if len(stanza.Show) > 0 {
-		line = append(line, []byte(stanza.Show)...)
-	} else {
-		line = append(line, []byte("online")...)
+	if !s.config.HideStatusUpdates {
+		var line []byte
+		line = append(line, s.term.Escape.Magenta...)
+		line = append(line, []byte(from)...)
+		line = append(line, ':')
+		line = append(line, s.term.Escape.Reset...)
+		line = append(line, ' ')
+		if gone {
+			line = append(line, []byte("offline")...)
+		} else if len(stanza.Show) > 0 {
+			line = append(line, []byte(stanza.Show)...)
+		} else {
+			line = append(line, []byte("online")...)
+		}
+		line = append(line, ' ')
+		line = append(line, []byte(stanza.Status)...)
+		line = append(line, '\n')
+		s.term.Write(line)
 	}
-	line = append(line, ' ')
-	line = append(line, []byte(stanza.Status)...)
-	line = append(line, '\n')
-	s.term.Write(line)
 }
 
 func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {

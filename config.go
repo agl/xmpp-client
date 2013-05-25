@@ -29,6 +29,7 @@ type Config struct {
 	RawLogFile          string   `json:",omitempty"`
 	NotifyCommand       []string `json:",omitempty"`
 	Bell                bool
+	HideStatusUpdates   bool
 	UseTor              bool
 	OTRAutoTearDown     bool
 	OTRAutoAppendTag    bool
