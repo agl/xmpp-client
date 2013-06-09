@@ -410,16 +410,18 @@ MainLoop:
 				}
 
 				for _, item := range s.roster {
-					line := "  "
+					line := ""
+					if _, ok := s.knownStates[item.Jid]; ok {
+						line += "[*] "
+					} else {
+						line += "[ ] "
+					}
 					line += item.Jid
 					numSpaces := 1 + (maxLen - len(item.Jid))
 					for i := 0; i < numSpaces; i++ {
 						line += " "
 					}
 					line += item.Subscription + "\t" + item.Name
-					if state, ok := s.knownStates[item.Jid]; ok {
-						line += "\t" + state
-					}
 					info(s.term, line)
 				}
 			case rosterEditCommand:
