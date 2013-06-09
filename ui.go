@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"flag"
@@ -476,7 +477,7 @@ MainLoop:
 						if isVerifiedFingerprint {
 							info(s.term, fmt.Sprintf("  Identity key  for %s is verified", to))
 						} else {
-							alert(s.term, fmt.Sprintf("  Identity key  for %s is not verified. You should use /otr-auth or /otr-authqa to verify their identity", to))
+							alert(s.term, fmt.Sprintf("  Identity key  for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", to))
 						}
 					}
 				}
@@ -505,6 +506,20 @@ MainLoop:
 				for _, msg := range msgs {
 					s.conn.Send(to, string(msg))
 				}
+			case authOobCommand:
+				fpr, err := hex.DecodeString(cmd.Fingerprint)
+				if err != nil {
+					alert(s.term, fmt.Sprintf("Invalid fingerprint %s - not authenticated", cmd.Fingerprint))
+					break
+				}
+				existing := s.config.UserIdForFingerprint(fpr)
+				if len(existing) != 0 {
+					alert(s.term, fmt.Sprintf("Fingerprint %s already belongs to %s", cmd.Fingerprint, existing))
+					break
+				}
+				s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: cmd.User})
+				s.config.Save()
+				info(s.term, fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User))
 			}
 		case rawStanza, ok := <-stanzaChan:
 			if !ok {
