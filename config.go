@@ -118,7 +118,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	}
 
 	term.SetPrompt("Use Tor?: ")
-	if useTorQuery, err := term.ReadLine(); err != nil || useTorQuery != "yes" {
+	if useTorQuery, err := term.ReadLine(); err != nil || len(useTorQuery) == 0 || useTorQuery[0] != 'y' && useTorQuery[0] != 'Y' {
 		info(term, "Not using Tor...")
 		config.UseTor = false
 	} else {
@@ -176,14 +176,22 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	}
 
 	var proxyStr string
-	term.SetPrompt("Proxy (i.e socks5://127.0.0.1:9050, enter for none): ")
+	proxyDefaultPrompt := ", enter for none"
+	if config.UseTor {
+		proxyDefaultPrompt = ", which is the default"
+	}
+	term.SetPrompt("Proxy (i.e socks5://127.0.0.1:9050" + proxyDefaultPrompt + "): ")
 
 	for {
 		if proxyStr, err = term.ReadLine(); err != nil {
 			return false
 		}
 		if len(proxyStr) == 0 {
-			break
+			if !config.UseTor {
+				break
+			} else {
+				proxyStr = "socks5://127.0.0.1:9050"
+			}
 		}
 		u, err := url.Parse(proxyStr)
 		if err != nil {
