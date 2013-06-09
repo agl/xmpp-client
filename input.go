@@ -29,6 +29,7 @@ var uiCommands = []uiCommand{
 	{"rostereditdone", rosterEditDoneCommand{}, "Load the edited roster from disk"},
 	{"otr-auth", authCommand{}, "Authenticate a secure peer with a mutual, shared secret"},
 	{"otr-authqa", authQACommand{}, "Authenticate a secure peer with a question and answer"},
+	{"otr-authoob", authOobCommand{}, "Authenticate a secure peer with out-of-band fingerprint verification"},
 	{"otr-end", endOTRCommand{}, "End an OTR session"},
 	{"otr-start", otrCommand{}, "Start an OTR session with the given user"},
 	{"otr-info", otrInfoCommand{}, "Print OTR information such as OTR fingerprint"},
@@ -49,6 +50,11 @@ type authQACommand struct {
 	User     string "uid"
 	Question string
 	Secret   string
+}
+
+type authOobCommand struct {
+	User        string "uid"
+	Fingerprint string
 }
 
 type confirmCommand struct {
