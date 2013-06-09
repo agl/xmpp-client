@@ -510,12 +510,16 @@ MainLoop:
 				fpr, err := hex.DecodeString(cmd.Fingerprint)
 				if err != nil {
 					alert(s.term, fmt.Sprintf("Invalid fingerprint %s - not authenticated", cmd.Fingerprint))
+					break
 				}
-				info(s.term, fmt.Sprintf("Manually verified user %s with fingerprint %s", cmd.User, cmd.Fingerprint))
-				if len(s.config.UserIdForFingerprint(fpr)) == 0 {
-					s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: cmd.User})
+				existing := s.config.UserIdForFingerprint(fpr)
+				if len(existing) != 0 {
+					alert(s.term, fmt.Sprintf("Fingerprint %s already belongs to %s", cmd.Fingerprint, existing))
+					break
 				}
+				s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: cmd.User})
 				s.config.Save()
+				info(s.term, fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User))
 			}
 		case rawStanza, ok := <-stanzaChan:
 			if !ok {
