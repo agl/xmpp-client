@@ -225,11 +225,24 @@ func main() {
 		}
 	}
 
+	var certSHA256 []byte
+	if len(config.ServerCertificateSHA256) > 0 {
+		certSHA256, err = hex.DecodeString(config.ServerCertificateSHA256)
+		if err != nil {
+			alert(term, "Failed to parse ServerCertificateSHA256 (should be hex string): "+err.Error())
+			return
+		}
+		if len(certSHA256) != 32 {
+			alert(term, "ServerCertificateSHA256 is not 32 bytes long")
+			return
+		}
+	}
 	xmppConfig := &xmpp.Config{
-		Log:            &lineLogger{term, nil},
-		Create:         *createAccount,
-		TrustedAddress: addrTrusted,
-		Archive:        false,
+		Log:                     &lineLogger{term, nil},
+		Create:                  *createAccount,
+		TrustedAddress:          addrTrusted,
+		Archive:                 false,
+		ServerCertificateSHA256: certSHA256,
 	}
 
 	if len(config.RawLogFile) > 0 {
