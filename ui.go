@@ -484,16 +484,8 @@ MainLoop:
 				info(term, fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()))
 				for to, conversation := range s.conversations {
 					if conversation.IsEncrypted() {
-						fpr := conversation.TheirPublicKey.Fingerprint()
-						isVerifiedFingerprint := len(s.config.UserIdForFingerprint(fpr)) > 0
 						info(s.term, fmt.Sprintf("Secure session with %s underway:", to))
-						info(s.term, fmt.Sprintf("  Fingerprint   for %s: %x", to, fpr))
-						info(s.term, fmt.Sprintf("  Session  ID   for %s: %x", to, conversation.SSID))
-						if isVerifiedFingerprint {
-							info(s.term, fmt.Sprintf("  Identity key  for %s is verified", to))
-						} else {
-							alert(s.term, fmt.Sprintf("  Identity key  for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", to))
-						}
+						printConversationInfo(s, to, conversation)
 					}
 				}
 			case endOTRCommand:
@@ -680,20 +672,8 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	}
 	switch change {
 	case otr.NewKeys:
-		fpr := conversation.TheirPublicKey.Fingerprint()
 		info(s.term, fmt.Sprintf("New OTR session with %s established at %s", from, time.Now().Format(time.RubyDate)))
-		info(s.term, fmt.Sprintf("  their fingerprint: %x", fpr))
-		info(s.term, fmt.Sprintf("  session id: %x", conversation.SSID))
-		knownUserId := s.config.UserIdForFingerprint(fpr)
-		if len(knownUserId) == 0 {
-			alert(s.term, "Fingerprint is unknown. You should use /otr-auth or /otr-authqa to verify their identity")
-		} else {
-			if knownUserId == from {
-				info(s.term, "Fingerprint is verified")
-			} else {
-				alert(s.term, fmt.Sprintf("Fingerprint is known, but for %s", knownUserId))
-			}
-		}
+		printConversationInfo(*s, from, conversation)
 	case otr.ConversationEnded:
 		// This is probably unsafe without a policy that _forces_ crypto to
 		// _everyone_ by default and refuses plaintext. Users might not notice
@@ -1286,3 +1266,18 @@ func (l *lineLogger) Write(data []byte) (int, error) {
 	l.buf = l.logLines(l.buf)
 	return origLen, nil
 }
+
+func printConversationInfo(s Session, uid string, conversation *otr.Conversation) {
+	fpr := conversation.TheirPublicKey.Fingerprint()
+	fprUid := s.config.UserIdForFingerprint(fpr)
+	info(s.term, fmt.Sprintf("  Fingerprint  for %s: %x", uid, fpr))
+	info(s.term, fmt.Sprintf("  Session  ID  for %s: %x", uid, conversation.SSID))
+	if fprUid == uid {
+		info(s.term, fmt.Sprintf("  Identity key for %s is verified", uid))
+	} else if len(fprUid) > 1 {
+		alert(s.term, fmt.Sprintf("  Warning: %s is using an identity key which was verified for %s", uid, fprUid))
+	} else {
+		alert(s.term, fmt.Sprintf("  Identity key for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", uid))
+	}
+}
+
