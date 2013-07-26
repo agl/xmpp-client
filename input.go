@@ -76,7 +76,10 @@ type noPasteCommand struct{}
 type quitCommand struct {
 }
 
-type rosterCommand struct{}
+type rosterCommand struct{
+	OnlineOnly bool "flag:online"
+}
+
 type rosterEditCommand struct{}
 type rosterEditDoneCommand struct{}
 
@@ -96,6 +99,15 @@ type msgCommand struct {
 }
 
 type toggleStatusUpdatesCommand struct{}
+
+func numPositionalFields(t reflect.Type) int {
+	for i := 0; i < t.NumField(); i++ {
+		if strings.HasPrefix(string(t.Field(i).Tag), "flag:") {
+			return i
+		}
+	}
+	return t.NumField()
+}
 
 func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefix []byte, isCommand, ok bool) {
 	if len(line) == 0 || line[0] != '/' {
@@ -131,6 +143,7 @@ func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefi
 	fieldStart := 0
 	inQuotes := false
 	lastWasEscape := false
+	numFields := numPositionalFields(t)
 
 	skippingWhitespace := true
 	for ; pos < len(line); pos++ {
@@ -165,7 +178,7 @@ func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefi
 	if skippingWhitespace {
 		return
 	}
-	if fieldNum >= t.NumField() {
+	if fieldNum >= numFields {
 		return
 	}
 	f := t.Field(fieldNum)
@@ -177,6 +190,26 @@ func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefi
 	before = line[:fieldStart]
 	prefix = line[fieldStart:]
 	return
+}
+
+// setOption updates the uiCommand, v, of type t given an option string with
+// the "--" prefix already removed. It returns true on success.
+func setOption(v reflect.Value, t reflect.Type, option string) bool {
+	for i := 0; i < t.NumField(); i++ {
+		fieldType := t.Field(i)
+		tag := string(fieldType.Tag)
+		if strings.HasPrefix(tag, "flag:") && tag[5:] == option {
+			field := v.Field(i)
+			if field.Bool() {
+				return false  // already set
+			} else {
+				field.SetBool(true)
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func parseCommand(commands []uiCommand, line []byte) (interface{}, string) {
@@ -208,17 +241,26 @@ func parseCommand(commands []uiCommand, line []byte) (interface{}, string) {
 	fieldNum := -1
 	inQuotes := false
 	lastWasEscape := false
+	numFields := numPositionalFields(t)
 	var field []byte
 
 	skippingWhitespace := true
 	for ; pos <= len(line); pos++ {
 		if !skippingWhitespace && (pos == len(line) || (line[pos] == ' ' && !inQuotes && !lastWasEscape)) {
 			skippingWhitespace = true
-			if fieldNum >= v.NumField() {
+			strField := string(field)
+
+			switch {
+			case fieldNum < numFields:
+				f := v.Field(fieldNum)
+				f.Set(reflect.ValueOf(strField))
+			case strings.HasPrefix(strField, "--"):
+				if !setOption(v, t, strField[2:]) {
+					return nil, "No such option " + strField + " for command"
+				}
+			default:
 				return nil, "Too many arguments for command " + command + ". Expected " + strconv.Itoa(v.NumField())
 			}
-			f := v.Field(fieldNum)
-			f.Set(reflect.ValueOf(string(field)))
 			field = field[:0]
 			continue
 		}
@@ -254,7 +296,7 @@ func parseCommand(commands []uiCommand, line []byte) (interface{}, string) {
 		field = append(field, line[pos])
 	}
 
-	if fieldNum != v.NumField()-1 {
+	if fieldNum < numFields-1 {
 		return nil, "Too few arguments for command " + command + ". Expected " + strconv.Itoa(v.NumField()) + ", but found " + strconv.Itoa(fieldNum+1)
 	}
 
