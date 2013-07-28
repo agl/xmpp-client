@@ -428,7 +428,11 @@ func (input *Input) showHelp() {
 		line := "/" + cmd.name
 		prototype := reflect.TypeOf(cmd.prototype)
 		for j := 0; j < prototype.NumField(); j++ {
-			line += " <" + strings.ToLower(prototype.Field(j).Name) + ">"
+			if strings.HasPrefix(string(prototype.Field(j).Tag), "flag:") {
+				line += " [--" + strings.ToLower(string(prototype.Field(j).Tag[5:])) + "]"
+			} else {
+				line += " <" + strings.ToLower(prototype.Field(j).Name) + ">"
+			}
 		}
 		if l := len(line); l > maxLen {
 			maxLen = l
