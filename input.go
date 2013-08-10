@@ -76,7 +76,7 @@ type noPasteCommand struct{}
 type quitCommand struct {
 }
 
-type rosterCommand struct{
+type rosterCommand struct {
 	OnlineOnly bool "flag:online"
 }
 
@@ -201,7 +201,7 @@ func setOption(v reflect.Value, t reflect.Type, option string) bool {
 		if strings.HasPrefix(tag, "flag:") && tag[5:] == option {
 			field := v.Field(i)
 			if field.Bool() {
-				return false  // already set
+				return false // already set
 			} else {
 				field.SetBool(true)
 				return true
