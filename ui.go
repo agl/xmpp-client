@@ -715,6 +715,8 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 			s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: from})
 		}
 		s.config.Save()
+	case otr.SMPFailed:
+		alert(s.term, fmt.Sprintf("Authentication with %s failed", from))
 	}
 
 	if len(out) == 0 {
@@ -1288,4 +1290,3 @@ func printConversationInfo(s Session, uid string, conversation *otr.Conversation
 		alert(s.term, fmt.Sprintf("  Identity key for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", uid))
 	}
 }
-
