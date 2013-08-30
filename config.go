@@ -18,23 +18,24 @@ import (
 )
 
 type Config struct {
-	filename                string `json:"-"`
-	Account                 string
-	Server                  string   `json:",omitempty"`
-	Proxies                 []string `json:",omitempty"`
-	Password                string   `json:",omitempty"`
-	Port                    int      `json:",omitempty"`
-	PrivateKey              []byte
-	KnownFingerprints       []KnownFingerprint
-	RawLogFile              string   `json:",omitempty"`
-	NotifyCommand           []string `json:",omitempty"`
-	Bell                    bool
-	HideStatusUpdates       bool
-	UseTor                  bool
-	OTRAutoTearDown         bool
-	OTRAutoAppendTag        bool
-	OTRAutoStartSession     bool
-	ServerCertificateSHA256 string `json:",omitempty"`
+	filename                      string `json:"-"`
+	Account                       string
+	Server                        string   `json:",omitempty"`
+	Proxies                       []string `json:",omitempty"`
+	Password                      string   `json:",omitempty"`
+	Port                          int      `json:",omitempty"`
+	PrivateKey                    []byte
+	KnownFingerprints             []KnownFingerprint
+	RawLogFile                    string   `json:",omitempty"`
+	NotifyCommand                 []string `json:",omitempty"`
+	IdleSecondsBeforeNotification int      `json:",omitempty"`
+	Bell                          bool
+	HideStatusUpdates             bool
+	UseTor                        bool
+	OTRAutoTearDown               bool
+	OTRAutoAppendTag              bool
+	OTRAutoStartSession           bool
+	ServerCertificateSHA256       string `json:",omitempty"`
 }
 
 type KnownFingerprint struct {
