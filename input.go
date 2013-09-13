@@ -109,12 +109,12 @@ func numPositionalFields(t reflect.Type) int {
 	return t.NumField()
 }
 
-func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefix []byte, isCommand, ok bool) {
+func parseCommandForCompletion(commands []uiCommand, line string) (before, prefix string, isCommand, ok bool) {
 	if len(line) == 0 || line[0] != '/' {
 		return
 	}
 
-	spacePos := bytes.IndexByte(line, ' ')
+	spacePos := strings.IndexRune(line, ' ')
 	if spacePos == -1 {
 		// We're completing a command name.
 		before = line[:1]
@@ -124,7 +124,7 @@ func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefi
 		return
 	}
 
-	command := string(line[1:spacePos])
+	command := line[1:spacePos]
 	var prototype interface{}
 
 	for _, cmd := range commands {
@@ -138,7 +138,6 @@ func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefi
 	}
 
 	t := reflect.TypeOf(prototype)
-	pos := spacePos
 	fieldNum := -1
 	fieldStart := 0
 	inQuotes := false
@@ -146,14 +145,14 @@ func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefi
 	numFields := numPositionalFields(t)
 
 	skippingWhitespace := true
-	for ; pos < len(line); pos++ {
+	for pos, r := range line[spacePos:] {
 		if skippingWhitespace {
-			if line[pos] == ' ' {
+			if r == ' ' {
 				continue
 			}
 			skippingWhitespace = false
 			fieldNum++
-			fieldStart = pos
+			fieldStart = pos + spacePos
 		}
 
 		if lastWasEscape {
@@ -161,16 +160,16 @@ func parseCommandForCompletion(commands []uiCommand, line []byte) (before, prefi
 			continue
 		}
 
-		if line[pos] == '\\' {
+		if r == '\\' {
 			lastWasEscape = true
 			continue
 		}
 
-		if line[pos] == '"' {
+		if r == '"' {
 			inQuotes = !inQuotes
 		}
 
-		if line[pos] == ' ' && !inQuotes {
+		if r == ' ' && !inQuotes {
 			skippingWhitespace = true
 		}
 	}
@@ -322,17 +321,17 @@ func (i *Input) AddUser(uid string) {
 		}
 	}
 
-	i.uidComplete.Insert([]byte(uid))
+	i.uidComplete.Insert(uid)
 	i.uids = append(i.uids, uid)
 }
 
 func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 	i.commands = new(priorityList)
 	for _, command := range uiCommands {
-		i.commands.Insert([]byte(command.name))
+		i.commands.Insert(command.name)
 	}
 
-	autoCompleteCallback := func(line []byte, pos, key int) ([]byte, int) {
+	autoCompleteCallback := func(line string, pos int, key rune) (string, int, bool) {
 		return i.AutoComplete(line, pos, key)
 	}
 
@@ -451,14 +450,14 @@ func (input *Input) showHelp() {
 	}
 }
 
-var nameTerminator = []byte(": ")
+const nameTerminator = ": "
 
-func (i *Input) AutoComplete(line []byte, pos, key int) ([]byte, int) {
+func (i *Input) AutoComplete(line string, pos int, key rune) (string, int, bool) {
 	const keyTab = 9
 
 	if key != keyTab {
 		i.lastKeyWasCompletion = false
-		return nil, -1
+		return "", -1, false
 	}
 
 	i.lock.Lock()
@@ -469,105 +468,87 @@ func (i *Input) AutoComplete(line []byte, pos, key int) ([]byte, int) {
 		// The user hit tab right after a completion, so we got
 		// it wrong.
 		if len(prefix) > 0 && prefix[0] == '/' {
-			if bytes.IndexByte(prefix, ' ') == len(prefix)-1 {
+			if strings.IndexRune(prefix, ' ') == len(prefix)-1 {
 				// We just completed a command.
 				newCommand := i.commands.Next()
-				var newLine []byte
-				newLine = append(newLine, '/')
-				newLine = append(newLine, newCommand...)
-				newLine = append(newLine, ' ')
-				newLine = append(newLine, line[pos:]...)
-				return newLine, len(newCommand) + 2
+				newLine := "/" + string(newCommand) + " " + line[pos:]
+				return newLine, len(newCommand) + 2, true
 			} else if prefix[len(prefix)-1] == ' ' {
 				// We just completed a uid in a command.
 				newUser := i.uidComplete.Next()
-				spacePos := bytes.LastIndex(prefix[:len(prefix)-1], []byte{' '})
-				var newLine []byte
-				newLine = append(newLine, prefix[:spacePos]...)
-				newLine = append(newLine, ' ')
-				newLine = append(newLine, newUser...)
-				newLine = append(newLine, ' ')
-				newLine = append(newLine, line[pos:]...)
-				return newLine, spacePos + 1 + len(newUser) + 1
+				spacePos := strings.LastIndex(prefix[:len(prefix)-1], " ")
+
+				newLine := prefix[:spacePos] + " " + string(newUser) + " " + line[pos:]
+				return newLine, spacePos + 1 + len(newUser) + 1, true
 			}
-		} else if len(prefix) > 0 && prefix[0] != '/' && bytes.HasSuffix(prefix, nameTerminator) {
+		} else if len(prefix) > 0 && prefix[0] != '/' && strings.HasSuffix(prefix, nameTerminator) {
 			// We just completed a uid at the start of a
 			// conversation line.
 			newUser := i.uidComplete.Next()
-			var newLine []byte
-			newLine = append(newLine, newUser...)
-			newLine = append(newLine, nameTerminator...)
-			newLine = append(newLine, line[pos:]...)
-			return newLine, len(newUser) + 2
+			newLine := string(newUser) + nameTerminator + line[pos:]
+			return newLine, len(newUser) + 2, true
 		}
 	} else {
 		if len(prefix) > 0 && prefix[0] == '/' {
 			a, b, isCommand, ok := parseCommandForCompletion(uiCommands, prefix)
 			if !ok {
-				return line, pos
+				return "", -1, false
 			}
-			var newValue []byte
+			var newValue string
 			if isCommand {
-				newValue = i.commands.Find(b)
+				newValue, ok = i.commands.Find(b)
 			} else {
-				newValue = i.uidComplete.Find(b)
+				newValue, ok = i.uidComplete.Find(b)
 			}
-			if len(newValue) == 0 {
-				return line, pos
+			if !ok {
+				return "", -1, false
 			}
 
-			var newLine []byte
-			newLine = append(newLine, a...)
-			newLine = append(newLine, newValue...)
-			newLine = append(newLine, ' ')
-			newLine = append(newLine, line[pos:]...)
+			newLine := string(a) + newValue + " " + line[pos:]
 			i.lastKeyWasCompletion = true
-			return newLine, len(a) + len(newValue) + 1
-		} else if bytes.IndexAny(prefix, ": ") == -1 {
+			return newLine, len(a) + len(newValue) + 1, true
+		} else if strings.IndexAny(prefix, ": ") == -1 {
 			// We're completing a uid at the start of a
 			// conversation line.
-			newUser := i.uidComplete.Find(prefix)
-			if len(newUser) == 0 {
-				return line, pos
+			newUser, ok := i.uidComplete.Find(prefix)
+			if !ok {
+				return "", -1, false
 			}
 
-			var newLine []byte
-			newLine = append(newLine, newUser...)
-			newLine = append(newLine, nameTerminator...)
-			newLine = append(newLine, line[pos:]...)
+			newLine := newUser + nameTerminator + line[pos:]
 			i.lastKeyWasCompletion = true
-			return newLine, len(newUser) + len(nameTerminator)
+			return newLine, len(newUser) + len(nameTerminator), true
 		}
 	}
 
 	i.lastKeyWasCompletion = false
-	return nil, 0
+	return "", -1, false
 }
 
 type priorityListEntry struct {
-	value []byte
+	value string
 	next  *priorityListEntry
 }
 
 type priorityList struct {
 	head       *priorityListEntry
-	lastPrefix []byte
-	lastResult []byte
+	lastPrefix string
+	lastResult string
 	n          int
 }
 
-func (pl *priorityList) Insert(value []byte) {
+func (pl *priorityList) Insert(value string) {
 	ent := new(priorityListEntry)
 	ent.next = pl.head
 	ent.value = value
 	pl.head = ent
 }
 
-func (pl *priorityList) findNth(prefix []byte, nth int) []byte {
+func (pl *priorityList) findNth(prefix string, nth int) (string, bool) {
 	var cur, last *priorityListEntry
 	cur = pl.head
 	for n := 0; cur != nil; cur = cur.next {
-		if bytes.HasPrefix(cur.value, prefix) {
+		if strings.HasPrefix(cur.value, prefix) {
 			if n == nth {
 				// move this entry to the top
 				if last != nil {
@@ -578,30 +559,34 @@ func (pl *priorityList) findNth(prefix []byte, nth int) []byte {
 				cur.next = pl.head
 				pl.head = cur
 				pl.lastResult = cur.value
-				return cur.value
+				return cur.value, true
 			}
 			n++
 		}
 		last = cur
 	}
 
-	return nil
+	return "", false
 }
 
-func (pl *priorityList) Find(prefix []byte) []byte {
-	pl.lastPrefix = make([]byte, len(prefix))
-	copy(pl.lastPrefix, prefix)
+func (pl *priorityList) Find(prefix string) (string, bool) {
+	pl.lastPrefix = prefix
 	pl.n = 0
 
 	return pl.findNth(prefix, 0)
 }
 
-func (pl *priorityList) Next() []byte {
+func (pl *priorityList) Next() string {
 	pl.n++
-	result := pl.findNth(pl.lastPrefix, pl.n)
-	if result == nil {
+	result, ok := pl.findNth(pl.lastPrefix, pl.n)
+	if !ok {
 		pl.n = 1
-		result = pl.findNth(pl.lastPrefix, pl.n)
+		result, ok = pl.findNth(pl.lastPrefix, pl.n)
+	}
+	// In this case, there's only one matching entry in the list.
+	if !ok {
+		pl.n = 0
+		result, _ = pl.findNth(pl.lastPrefix, pl.n)
 	}
 	return result
 }

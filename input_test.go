@@ -31,20 +31,25 @@ var priorityListTests = []struct {
 
 	{opFind, "a", "anvil"},
 	{opFind, "b", "bop"},
+
+	{opFind, "c", "charlie"},
+	{opNext, "", "charlie"},
+	{opNext, "", "charlie"},
 }
 
 func TestPriorityList(t *testing.T) {
 	var pl priorityList
 
-	for _, word := range []string{"bop", "boom", "bob", "anvil", "anchor"} {
-		pl.Insert([]byte(word))
+	for _, word := range []string{"bop", "boom", "bob", "anvil", "anchor", "charlie"} {
+		pl.Insert(word)
 	}
 
 	for i, step := range priorityListTests {
-		var out []byte
+		var out string
+
 		switch step.op {
 		case opFind:
-			out = pl.Find([]byte(step.in))
+			out, _ = pl.Find(step.in)
 		case opNext:
 			out = pl.Next()
 		default:
@@ -96,7 +101,7 @@ var parseForCompletionTests = []struct {
 
 func TestParseCommandForCompletion(t *testing.T) {
 	for i, test := range parseForCompletionTests {
-		before, prefix, isCommand, ok := parseCommandForCompletion(testCommands, []byte(test.in))
+		before, prefix, isCommand, ok := parseCommandForCompletion(testCommands, test.in)
 		if ok != test.ok {
 			t.Errorf("#%d: result mismatch (should be %t)", i, test.ok)
 			continue
@@ -106,10 +111,10 @@ func TestParseCommandForCompletion(t *testing.T) {
 			continue
 		}
 
-		if string(before) != test.before {
+		if before != test.before {
 			t.Errorf("#%d: mismatch with 'before': got '%s', want '%s'", i, string(before), test.before)
 		}
-		if string(prefix) != test.prefix {
+		if prefix != test.prefix {
 			t.Errorf("#%d: mismatch with 'prefix': got '%s', want '%s'", i, string(before), test.before)
 		}
 		if isCommand != test.isCommand {
