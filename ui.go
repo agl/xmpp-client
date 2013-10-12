@@ -473,6 +473,10 @@ MainLoop:
 				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
 			case msgCommand:
 				conversation, ok := s.conversations[cmd.to]
+				if (!ok || !conversation.IsEncrypted()) && config.ShouldEncryptTo(cmd.to) {
+					warn(s.term, fmt.Sprintf("Did not send: no encryption established with %s", cmd.to))
+					continue
+				}
 				var msgs [][]byte
 				message := []byte(cmd.msg)
 				// Automatically tag all outgoing plaintext

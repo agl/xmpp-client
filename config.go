@@ -35,7 +35,9 @@ type Config struct {
 	OTRAutoTearDown               bool
 	OTRAutoAppendTag              bool
 	OTRAutoStartSession           bool
-	ServerCertificateSHA256       string `json:",omitempty"`
+	ServerCertificateSHA256       string   `json:",omitempty"`
+	AlwaysEncrypt                 bool     `json:",omitempty"`
+	AlwaysEncryptWith             []string `json:",omitempty"`
 }
 
 type KnownFingerprint struct {
@@ -97,6 +99,19 @@ func (c *Config) HasFingerprint(uid string) bool {
 		}
 	}
 
+	return false
+}
+
+func (c *Config) ShouldEncryptTo(uid string) bool {
+	if c.AlwaysEncrypt {
+		return true
+	}
+
+	for _, contact := range c.AlwaysEncryptWith {
+		if contact == uid {
+			return true
+		}
+	}
 	return false
 }
 
