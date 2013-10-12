@@ -90,6 +90,16 @@ func (c *Config) UserIdForFingerprint(fpr []byte) string {
 	return ""
 }
 
+func (c *Config) HasFingerprint(uid string) bool {
+	for _, known := range c.KnownFingerprints {
+		if uid == known.UserId {
+			return true
+		}
+	}
+
+	return false
+}
+
 func enroll(config *Config, term *terminal.Terminal) bool {
 	var err error
 	warn(term, "Enrolling new config file")

@@ -52,7 +52,7 @@ func appendTerminalEscaped(out, msg []byte) []byte {
 	return out
 }
 
-func terminalMessage(term *terminal.Terminal, color []byte, msg string) {
+func terminalMessage(term *terminal.Terminal, color []byte, msg string, critical bool) {
 	line := make([]byte, len(msg)+16)[:0]
 
 	line = append(line, ' ')
@@ -60,21 +60,31 @@ func terminalMessage(term *terminal.Terminal, color []byte, msg string) {
 	line = append(line, '*')
 	line = append(line, term.Escape.Reset...)
 	line = append(line, []byte(fmt.Sprintf(" (%s) ", time.Now().Format(time.Kitchen)))...)
+	if critical {
+		line = append(line, term.Escape.Red...)
+	}
 	line = appendTerminalEscaped(line, []byte(msg))
+	if critical {
+		line = append(line, term.Escape.Reset...)
+	}
 	line = append(line, '\n')
 	term.Write(line)
 }
 
 func info(term *terminal.Terminal, msg string) {
-	terminalMessage(term, term.Escape.Blue, msg)
+	terminalMessage(term, term.Escape.Blue, msg, false)
 }
 
 func warn(term *terminal.Terminal, msg string) {
-	terminalMessage(term, term.Escape.Magenta, msg)
+	terminalMessage(term, term.Escape.Magenta, msg, false)
 }
 
 func alert(term *terminal.Terminal, msg string) {
-	terminalMessage(term, term.Escape.Red, msg)
+	terminalMessage(term, term.Escape.Red, msg, false)
+}
+
+func critical(term *terminal.Terminal, msg string) {
+	terminalMessage(term, term.Escape.Red, msg, true)
 }
 
 type Session struct {
@@ -1290,6 +1300,8 @@ func printConversationInfo(s Session, uid string, conversation *otr.Conversation
 		info(s.term, fmt.Sprintf("  Identity key for %s is verified", uid))
 	} else if len(fprUid) > 1 {
 		alert(s.term, fmt.Sprintf("  Warning: %s is using an identity key which was verified for %s", uid, fprUid))
+	} else if s.config.HasFingerprint(uid) {
+		critical(s.term, fmt.Sprintf("  Identity key for %s is incorrect", uid))
 	} else {
 		alert(s.term, fmt.Sprintf("  Identity key for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", uid))
 	}
