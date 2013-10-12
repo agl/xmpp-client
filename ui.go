@@ -43,7 +43,7 @@ var OTRWhitespaceTag = append(OTRWhitespaceTagStart, OTRWhiteSpaceTagV2...)
 // sequences that may be in msg.
 func appendTerminalEscaped(out, msg []byte) []byte {
 	for _, c := range msg {
-		if c < 32 && c != '\t' {
+		if c == 127 || (c < 32 && c != '\t') {
 			out = append(out, '?')
 		} else {
 			out = append(out, c)
