@@ -404,6 +404,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			for _, uid := range i.uids {
 				if possibleName == uid {
 					lastTarget = possibleName
+					i.term.SetPrompt(lastTarget+"> ")
 					line = line[pos+2:]
 					break
 				}
