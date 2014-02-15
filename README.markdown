@@ -2,6 +2,68 @@ xmpp-client setup
 =================
 
     go get github.com/agl/xmpp-client
+    
+Build and run instructions for Ubuntu 12.04 (codename Precise Pangolin, go version 1.0)
+    
+    ## Install go and co.
+    sudo apt-get install git golang mercurial 
+    
+    ## Get xmpp-client source code
+    sudo go get github.com/agl/xmpp-client
+
+    ## This command starts the client from the default GOPATH folder
+    /usr/lib/go/bin/xmpp-client 	   
+
+    ## If you want to set up an alias
+    echo "alias xmpp-client='/usr/lib/go/bin/xmpp-client' " >> ~/.bashrc
+     . ~/.bashrc
+   
+    ## This alias now starts the client
+    xmpp-client
+
+
+Build and run instructions for Ubuntu 13.10 (codename Saucy Salamander, go version 1.1.2)
+
+    sudo apt-get install git golang mercurial 
+    
+    ## Setting GOPATH
+    export GOPATH=$HOME/go 
+    
+    go get github.com/agl/xmpp-client
+    
+    ## This command starts the client from the set GOPATH folder
+    /home/user/go/bin/xmpp-client    
+
+    echo "alias xmpp-client='/home/user/go/bin/xmpp-client' " >> ~/.bashrc
+    . ~/.bashrc
+    xmpp-client
+    
+
+Build and run instructions for Tails (not tested with persistance, should work)  
+
+    ## Old-stable, on which Tails is based, doesn't have Go packages  
+    sudo apt-get install -t unstable golang
+    
+    ## Git is already included in tails so we only need to get Mercurial
+    sudo apt-get install mercurial
+    
+    ## Assuming you have created a persistant volume
+    export GOPATH=/home/amnesia/Persistent/go/
+    
+    go get github.com/agl/xmpp-client
+    /home/amnesia/Persistent/go/bin/xmpp-client 
+    
+     
+Build and run instructions for Debian 7.4 (codename Wheezy, go version 1.0.2)
+
+    sudo apt-get install git golang mercurial 
+    sudo go get github.com/agl/xmpp-client
+    /usr/lib/go/bin/xmpp-client 	   
+
+    echo "alias xmpp-client='/usr/lib/go/bin/xmpp-client' " >> ~/.bashrc
+    . ~/.bashrc
+    xmpp-client
+
 
 xmpp-client use
 ===============
