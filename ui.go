@@ -63,6 +63,10 @@ loop:
 		case html.TextToken:
 			out = append(out, z.Text()...)
 		case html.ErrorToken:
+			if err := z.Err(); err != nil && err != io.EOF {
+				out = msg
+				return
+			}
 			break loop
 		}
 	}
