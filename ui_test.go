@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -24,4 +25,14 @@ func TestEscaping(t *testing.T) {
 			t.Errorf("Unescaping didn't return the original value: '%s' -> '%s' -> '%s'", test, escaped, unescaped)
 		}
 	}
+}
+
+func TestHTMLStripping(t *testing.T) {
+	raw := []byte("<hr>This is some <font color='green'>html</font><br />.")
+	exp := []byte("This is some html.")
+	res := stripHTML(raw)
+	if !bytes.Equal(res, exp) {
+		t.Errorf("HTML wasn't properly stripped: '%s' -> '%s' but expected '%s'", raw, res, exp)
+	}
+
 }

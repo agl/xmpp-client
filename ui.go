@@ -20,6 +20,7 @@ import (
 
 	"code.google.com/p/go.crypto/otr"
 	"code.google.com/p/go.crypto/ssh/terminal"
+	"code.google.com/p/go.net/html"
 	"code.google.com/p/go.net/proxy"
 	"github.com/agl/xmpp"
 )
@@ -50,6 +51,23 @@ func appendTerminalEscaped(out, msg []byte) []byte {
 		}
 	}
 	return out
+}
+
+func stripHTML(msg []byte) (out []byte) {
+	z := html.NewTokenizer(bytes.NewReader(msg))
+
+loop:
+	for {
+		tt := z.Next()
+		switch tt {
+		case html.TextToken:
+			out = append(out, z.Text()...)
+		case html.ErrorToken:
+			break loop
+		}
+	}
+
+	return
 }
 
 func terminalMessage(term *terminal.Terminal, color []byte, msg string, critical bool) {
@@ -774,7 +792,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	t := fmt.Sprintf("(%s) %s: ", time.Now().Format(time.RubyDate), from)
 	line = append(line, []byte(t)...)
 	line = append(line, s.term.Escape.Reset...)
-	line = appendTerminalEscaped(line, out)
+	line = appendTerminalEscaped(line, stripHTML(out))
 	line = append(line, '\n')
 	if s.config.Bell {
 		line = append(line, '\a')
