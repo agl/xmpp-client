@@ -858,6 +858,7 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 	if !s.config.HideStatusUpdates {
 		var line []byte
 		line = append(line, s.term.Escape.Magenta...)
+		line = append(line, []byte(fmt.Sprintf(" * (%s) ",time.Now().Format(time.RubyDate)))...)
 		line = append(line, []byte(from)...)
 		line = append(line, ':')
 		line = append(line, s.term.Escape.Reset...)
