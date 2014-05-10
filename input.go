@@ -18,23 +18,28 @@ type uiCommand struct {
 
 var uiCommands = []uiCommand{
 	{"add", addCommand{}, "Request a subscription to another user's presence"},
+	{"away", awayCommand{}, "Set your status to Away"},
+	{"chat", chatCommand{}, "Set your status to Available for Chat"},
 	{"confirm", confirmCommand{}, "Confirm an inbound subscription request"},
 	{"deny", denyCommand{}, "Deny an inbound subscription request"},
+	{"dnd", dndCommand{}, "Set your status to Busy / Do Not Disturb"},
 	{"help", helpCommand{}, "List known commands"},
-	{"paste", pasteCommand{}, "Start interpreting text verbatim"},
 	{"nopaste", noPasteCommand{}, "Stop interpreting text verbatim"},
-	{"quit", quitCommand{}, "Quit the program"},
-	{"roster", rosterCommand{}, "Display the current roster"},
-	{"rosteredit", rosterEditCommand{}, "Write the roster to disk"},
-	{"rostereditdone", rosterEditDoneCommand{}, "Load the edited roster from disk"},
+	{"online", onlineCommand{}, "Set your status to Available / Online"},
 	{"otr-auth", authCommand{}, "Authenticate a secure peer with a mutual, shared secret"},
-	{"otr-authqa", authQACommand{}, "Authenticate a secure peer with a question and answer"},
 	{"otr-authoob", authOobCommand{}, "Authenticate a secure peer with out-of-band fingerprint verification"},
+	{"otr-authqa", authQACommand{}, "Authenticate a secure peer with a question and answer"},
 	{"otr-end", endOTRCommand{}, "End an OTR session"},
-	{"otr-start", otrCommand{}, "Start an OTR session with the given user"},
 	{"otr-info", otrInfoCommand{}, "Print OTR information such as OTR fingerprint"},
-	{"version", versionCommand{}, "Ask a Jabber client for its version"},
+	{"otr-start", otrCommand{}, "Start an OTR session with the given user"},
+	{"paste", pasteCommand{}, "Start interpreting text verbatim"},
+	{"quit", quitCommand{}, "Quit the program"},
+	{"rostereditdone", rosterEditDoneCommand{}, "Load the edited roster from disk"},
+	{"rosteredit", rosterEditCommand{}, "Write the roster to disk"},
+	{"roster", rosterCommand{}, "Display the current roster"},
 	{"statusupdates", toggleStatusUpdatesCommand{}, "Toggle if status updates are displayed"},
+	{"version", versionCommand{}, "Ask a Jabber client for its version"},
+	{"xa", xaCommand{}, "Set your status to Extended Away"},
 }
 
 type addCommand struct {
@@ -72,6 +77,11 @@ type endOTRCommand struct {
 type helpCommand struct{}
 type pasteCommand struct{}
 type noPasteCommand struct{}
+type awayCommand struct{}
+type chatCommand struct{}
+type dndCommand struct{}
+type xaCommand struct{}
+type onlineCommand struct{}
 
 type quitCommand struct {
 }

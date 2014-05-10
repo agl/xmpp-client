@@ -571,6 +571,16 @@ MainLoop:
 				s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: cmd.User})
 				s.config.Save()
 				info(s.term, fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User))
+			case awayCommand:
+				s.conn.SignalPresence("away")
+			case chatCommand:
+				s.conn.SignalPresence("chat")
+			case dndCommand:
+				s.conn.SignalPresence("dnd")
+			case xaCommand:
+				s.conn.SignalPresence("xa")
+			case onlineCommand:
+				s.conn.SignalPresence("")
 			}
 		case rawStanza, ok := <-stanzaChan:
 			if !ok {
