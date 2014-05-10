@@ -793,7 +793,26 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		line = append(line, s.term.Escape.Red...)
 	}
 
-	t := fmt.Sprintf("(%s) %s: ", time.Now().Format(time.RubyDate), from)
+	var timestamp string
+	var messageTime time.Time
+	if stanza.Delay != nil && len(stanza.Delay.Stamp) > 0 {
+		// An XEP-0203 Delayed Delivery <delay/> element exists for
+		// this message, meaning that someone sent it while we were
+		// offline. Let's show the timestamp for when the message was
+		// sent, rather than time.Now().
+		messageTime, err = time.Parse(time.RFC3339, stanza.Delay.Stamp)
+		if err != nil {
+			alert(s.term, "Can not parse Delayed Delivery timestamp, using quoted string instead.")
+			timestamp = fmt.Sprintf("%q", stanza.Delay.Stamp)
+		}
+	} else {
+		messageTime = time.Now()
+	}
+	if len(timestamp) == 0 {
+		timestamp = messageTime.Format(time.RubyDate)
+	}
+
+	t := fmt.Sprintf("(%s) %s: ", timestamp, from)
 	line = append(line, []byte(t)...)
 	line = append(line, s.term.Escape.Reset...)
 	line = appendTerminalEscaped(line, stripHTML(out))
