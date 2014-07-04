@@ -12,10 +12,12 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"code.google.com/p/go.crypto/otr"
@@ -174,6 +176,14 @@ func (s *Session) readMessages(stanzaChan chan<- xmpp.Stanza) {
 	}
 }
 
+func updateTerminalSize(term *terminal.Terminal) {
+	width, height, err := terminal.GetSize(0)
+	if err != nil {
+		return
+	}
+	term.SetSize(width, height)
+}
+
 func main() {
 	flag.Parse()
 
@@ -183,9 +193,15 @@ func main() {
 	}
 	defer terminal.Restore(0, oldState)
 	term := terminal.NewTerminal(os.Stdin, "> ")
-	if width, height, err := terminal.GetSize(0); err == nil {
-		term.SetSize(width, height)
-	}
+	updateTerminalSize(term)
+
+	resizeChan := make(chan os.Signal)
+	go func() {
+		for _ = range resizeChan {
+			updateTerminalSize(term)
+		}
+	}()
+	signal.Notify(resizeChan, syscall.SIGWINCH)
 
 	if len(*configFile) == 0 {
 		homeDir := os.Getenv("HOME")
