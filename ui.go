@@ -206,16 +206,15 @@ func main() {
 	if len(*configFile) == 0 {
 		homeDir := os.Getenv("HOME")
 		if len(homeDir) == 0 {
-			fmt.Fprintf(os.Stderr, "$HOME not set. Please either export $HOME or use the -config-file option.\n")
-			os.Exit(1)
+			alert(term, "$HOME not set. Please either export $HOME or use the -config-file option.\n")
+			return
 		}
-		persistentDir := homeDir + "/Persistent"
+		persistentDir := filepath.Join(homeDir, "Persistent")
 		if stat, err := os.Lstat(persistentDir); err == nil && stat.IsDir() {
 			// Looks like Tails.
-			*configFile = persistentDir + "/.xmpp-client"
-		} else {
-			*configFile = homeDir + "/.xmpp-client"
+			homeDir = persistentDir
 		}
+		*configFile = filepath.Join(homeDir, ".xmpp-client")
 	}
 
 	config, err := ParseConfig(*configFile)
