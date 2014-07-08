@@ -83,7 +83,7 @@ func terminalMessage(term *terminal.Terminal, color []byte, msg string, critical
 	line = append(line, color...)
 	line = append(line, '*')
 	line = append(line, term.Escape.Reset...)
-	line = append(line, []byte(fmt.Sprintf(" (%s) ", time.Now().Format(time.Kitchen)))...)
+	line = append(line, []byte(fmt.Sprintf(" (%s) ", time.Now().Format(time.RubyDate)))...)
 	if critical {
 		line = append(line, term.Escape.Red...)
 	}
@@ -748,7 +748,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	}
 	switch change {
 	case otr.NewKeys:
-		info(s.term, fmt.Sprintf("New OTR session with %s established at %s", from, time.Now().Format(time.RubyDate)))
+		info(s.term, fmt.Sprintf("New OTR session with %s", from))
 		printConversationInfo(*s, from, conversation)
 	case otr.ConversationEnded:
 		// This is probably unsafe without a policy that _forces_ crypto to
