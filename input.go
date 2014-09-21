@@ -335,7 +335,7 @@ func (i *Input) AddUser(uid string) {
 	i.uids = append(i.uids, uid)
 }
 
-func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
+func (i *Input) ProcessCommands(commandsChan chan<- interface{}, s Session) {
 	i.commands = new(priorityList)
 	for _, command := range uiCommands {
 		i.commands.Insert(command.name)
@@ -345,7 +345,6 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 		return i.AutoComplete(line, pos, key)
 	}
 
-	var lastTarget string
 	paste := false
 
 	for {
@@ -365,7 +364,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			if l == "/nopaste" {
 				paste = false
 			} else {
-				commandsChan <- msgCommand{lastTarget, string(line)}
+				commandsChan <- msgCommand{s.lastTarget, string(line)}
 			}
 			continue
 		}
@@ -391,7 +390,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 				continue
 			}
 			if _, ok := cmd.(pasteCommand); ok {
-				if len(lastTarget) == 0 {
+				if len(s.lastTarget) == 0 {
 					alert(i.term, "Can't enter paste mode without a destination. Send a message to someone to select the destination")
 					continue
 				}
@@ -413,21 +412,60 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			possibleName := line[:pos]
 			for _, uid := range i.uids {
 				if possibleName == uid {
-					lastTarget = possibleName
-					i.term.SetPrompt(lastTarget + "> ")
-					line = line[pos+2:]
+					s.lastTarget = possibleName
+					// Default to displaying the target user's name in white,
+					// as we do not yet know the state of whether or not the
+					// conversation is encrypted, because we don't have access
+					// to the overarching Session from here:
+					i.SetPromptForTarget(s.lastTarget)
+					line = line[pos + 2:]
 					break
 				}
 			}
 		}
 		i.lock.Unlock()
 
-		if len(lastTarget) == 0 {
+		if len(s.lastTarget) == 0 {
 			warn(i.term, "Start typing a Jabber address and hit tab to send a message to someone")
 			continue
 		}
-		commandsChan <- msgCommand{lastTarget, string(line)}
+		commandsChan <- msgCommand{s.lastTarget, string(line)}
 	}
+}
+
+// Update the terminal prompt to display the Jabber ID of the default user
+// we're speaking to.
+//
+// If `encrypted` is `true`, then the contact's Jabber ID will be displayed in
+// green; if it's `false`, in red. If the `encrypted` parameter isn't given,
+// then we assume that the state of encryption for the conversation is
+// unknown, and we display the contact's Jabber ID in white.
+func (input *Input) SetPromptForTarget(target string, encrypted ...bool) {
+	prompt := make([]byte, len(target))[:0]
+	knownState := false
+	var enc bool
+
+	if len(encrypted) > 0 {
+		enc = encrypted[0]
+		knownState = true
+	} else {
+		enc = false
+	}
+
+	if knownState {
+		if enc {
+			prompt = append(prompt, input.term.Escape.Green...)
+		} else {
+			prompt = append(prompt, input.term.Escape.Red...)
+		}
+	}
+	
+	prompt = append(prompt, target...)
+
+	if knownState {
+		prompt = append(prompt, input.term.Escape.Reset...)
+	}
+	input.term.SetPrompt(string(prompt) + " > ")
 }
 
 func (input *Input) showHelp() {
