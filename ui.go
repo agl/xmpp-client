@@ -145,9 +145,6 @@ type Session struct {
 	// lastActionTime is the time at which the user last entered a command,
 	// or was last notified.
 	lastActionTime time.Time
-	// lastTarget is the JID (without the resource) of the last contact we
-	// sent a message to.
-	lastTarget string
 }
 
 // rosterEdit contains information about a pending roster edit. Roster edits
@@ -371,7 +368,7 @@ func main() {
 		uidComplete: new(priorityList),
 	}
 	commandChan := make(chan interface{})
-	go s.input.ProcessCommands(commandChan, s)
+	go s.input.ProcessCommands(commandChan)
 
 	stanzaChan := make(chan xmpp.Stanza)
 	go s.readMessages(stanzaChan)
@@ -520,24 +517,14 @@ MainLoop:
 				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
 			case msgCommand:
 				conversation, ok := s.conversations[cmd.to]
-				if (!ok || !conversation.IsEncrypted()) && config.ShouldEncryptTo(cmd.to) {
-					s.input.lock.Lock()
-					s.input.SetPromptForTarget(cmd.to, false)
-					s.input.lock.Unlock()
+				isEncrypted := ok && conversation.IsEncrypted()
+				if cmd.setPromptIsEncrypted != nil {
+					cmd.setPromptIsEncrypted <- isEncrypted
+				}
+				if !isEncrypted && config.ShouldEncryptTo(cmd.to) {
 					warn(s.term, fmt.Sprintf("Did not send: no encryption established with %s", cmd.to))
 					continue
 				}
-
-				// Update the prompt to notify the user whether or not the
-				// conversation is encrypted:
-				s.input.lock.Lock()
-				if conversation.IsEncrypted() {
-					s.input.SetPromptForTarget(cmd.to, true)
-				} else {
-					s.input.SetPromptForTarget(cmd.to, false)
-				}
-				s.input.lock.Unlock()
-
 				var msgs [][]byte
 				message := []byte(cmd.msg)
 				// Automatically tag all outgoing plaintext
@@ -582,6 +569,8 @@ MainLoop:
 				for _, msg := range msgs {
 					s.conn.Send(to, string(msg))
 				}
+				s.input.SetPromptForTarget(cmd.User, false)
+				warn(s.term, "OTR conversation ended with "+cmd.User)
 			case authQACommand:
 				to := string(cmd.User)
 				conversation, ok := s.conversations[to]
@@ -765,16 +754,11 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	}
 	switch change {
 	case otr.NewKeys:
+		s.input.SetPromptForTarget(from, true)
 		info(s.term, fmt.Sprintf("New OTR session with %s established at %s", from, time.Now().Format(time.RubyDate)))
 		printConversationInfo(*s, from, conversation)
-		// If this is the last target we were talking to, update the prompt
-		// to reflect that the conversation is now encrypted:
-		if s.lastTarget == from {
-			s.input.lock.Lock()
-			s.input.SetPromptForTarget(from, true)
-			s.input.lock.Unlock()
-		}
 	case otr.ConversationEnded:
+		s.input.SetPromptForTarget(from, false)
 		// This is probably unsafe without a policy that _forces_ crypto to
 		// _everyone_ by default and refuses plaintext. Users might not notice
 		// their buddy has ended a session, which they have also ended, and they
@@ -794,13 +778,6 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 			}
 		} else {
 			info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
-		}
-		// If this is the last target we were talking to, update the prompt
-		// to reflect that the conversation is now unencrypted:
-		if s.lastTarget == from {
-			s.input.lock.Lock()
-			s.input.SetPromptForTarget(from, false)
-			s.input.lock.Unlock()
 		}
 	case otr.SMPSecretNeeded:
 		info(s.term, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from))
