@@ -849,7 +849,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		messageTime = time.Now()
 	}
 	if len(timestamp) == 0 {
-		timestamp = messageTime.Format(time.RubyDate)
+		timestamp = messageTime.Format(time.Stamp)
 	}
 
 	t := fmt.Sprintf("(%s) %s: ", timestamp, from)
