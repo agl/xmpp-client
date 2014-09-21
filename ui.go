@@ -42,6 +42,12 @@ var OTRWhiteSpaceTagV3 = []byte("\x20\x20\x09\x09\x20\x20\x09\x09")
 
 var OTRWhitespaceTag = append(OTRWhitespaceTagStart, OTRWhiteSpaceTagV2...)
 
+// DammitIKnowWhatYearAndTimezoneIAmIn is a shorter version of the
+// time.format.RubyDate timestamp format, without the timezone and year.
+const (
+	DammitIKnowWhatYearAndTimezoneIAmIn = "Mon Jan 02 15:04:05"
+)
+
 // appendTerminalEscaped acts like append(), but breaks terminal escape
 // sequences that may be in msg.
 func appendTerminalEscaped(out, msg []byte) []byte {
@@ -841,7 +847,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		messageTime = time.Now()
 	}
 	if len(timestamp) == 0 {
-		timestamp = messageTime.Format(time.RubyDate)
+		timestamp = messageTime.Format(DammitIKnowWhatYearAndTimezoneIAmIn)
 	}
 
 	t := fmt.Sprintf("(%s) %s: ", timestamp, from)
