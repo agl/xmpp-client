@@ -413,11 +413,23 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}, s Session) {
 			for _, uid := range i.uids {
 				if possibleName == uid {
 					s.lastTarget = possibleName
-					// Default to displaying the target user's name in white,
-					// as we do not yet know the state of whether or not the
-					// conversation is encrypted, because we don't have access
-					// to the overarching Session from here:
-					i.SetPromptForTarget(s.lastTarget)
+
+					conversation, ok := s.conversations[s.lastTarget]
+					// If we're attempting to message a contact, and the
+					// otr.Conversation isn't within the current Session (!ok)
+					// then it's not possible (??) that the OTR key exchange
+					// has completed. Therefore, we default to displaying the
+					// contact's JID in red, assuming that it's currently
+					// unencrypted:
+					if (!ok || (ok && !conversation.IsEncrypted())){
+						i.SetPromptForTarget(s.lastTarget, false)
+					} else {
+						if conversation.IsEncrypted() {
+							// Display the target's name in green in the
+							// prompt, if the conversation is encrypted:
+							i.SetPromptForTarget(s.lastTarget, true)
+						}
+					}
 					line = line[pos + 2:]
 					break
 				}
