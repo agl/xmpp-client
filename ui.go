@@ -517,7 +517,11 @@ MainLoop:
 				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
 			case msgCommand:
 				conversation, ok := s.conversations[cmd.to]
-				if (!ok || !conversation.IsEncrypted()) && config.ShouldEncryptTo(cmd.to) {
+				isEncrypted := ok && conversation.IsEncrypted()
+				if cmd.setPromptIsEncrypted != nil {
+					cmd.setPromptIsEncrypted <- isEncrypted
+				}
+				if !isEncrypted && config.ShouldEncryptTo(cmd.to) {
 					warn(s.term, fmt.Sprintf("Did not send: no encryption established with %s", cmd.to))
 					continue
 				}
@@ -565,6 +569,8 @@ MainLoop:
 				for _, msg := range msgs {
 					s.conn.Send(to, string(msg))
 				}
+				s.input.SetPromptForTarget(cmd.User, false)
+				warn(s.term, "OTR conversation ended with "+cmd.User)
 			case authQACommand:
 				to := string(cmd.User)
 				conversation, ok := s.conversations[to]
@@ -748,9 +754,11 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	}
 	switch change {
 	case otr.NewKeys:
+		s.input.SetPromptForTarget(from, true)
 		info(s.term, fmt.Sprintf("New OTR session with %s established at %s", from, time.Now().Format(time.RubyDate)))
 		printConversationInfo(*s, from, conversation)
 	case otr.ConversationEnded:
+		s.input.SetPromptForTarget(from, false)
 		// This is probably unsafe without a policy that _forces_ crypto to
 		// _everyone_ by default and refuses plaintext. Users might not notice
 		// their buddy has ended a session, which they have also ended, and they

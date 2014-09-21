@@ -106,6 +106,11 @@ type versionCommand struct {
 type msgCommand struct {
 	to  string
 	msg string
+	// setPromptIsEncrypted is used to synchonously indicate whether the
+	// prompt should show the contact as encrypted, before the prompt is
+	// redrawn. It may be nil to indicate that the prompt cannot be
+	// updated but otherwise must be sent to.
+	setPromptIsEncrypted chan<- bool
 }
 
 type toggleStatusUpdatesCommand struct{}
@@ -314,11 +319,14 @@ func parseCommand(commands []uiCommand, line []byte) (interface{}, string) {
 
 type Input struct {
 	term                 *terminal.Terminal
-	uidComplete          *priorityList
-	uids                 []string
 	commands             *priorityList
 	lastKeyWasCompletion bool
-	lock                 sync.Mutex
+
+	// lock protects uids, uidComplete and lastTarget.
+	lock        sync.Mutex
+	uids        []string
+	uidComplete *priorityList
+	lastTarget  string
 }
 
 func (i *Input) AddUser(uid string) {
@@ -345,8 +353,8 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 		return i.AutoComplete(line, pos, key)
 	}
 
-	var lastTarget string
 	paste := false
+	setPromptIsEncrypted := make(chan bool)
 
 	for {
 		if paste {
@@ -365,7 +373,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			if l == "/nopaste" {
 				paste = false
 			} else {
-				commandsChan <- msgCommand{lastTarget, string(line)}
+				commandsChan <- msgCommand{i.lastTarget, string(line), nil}
 			}
 			continue
 		}
@@ -391,7 +399,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 				continue
 			}
 			if _, ok := cmd.(pasteCommand); ok {
-				if len(lastTarget) == 0 {
+				if len(i.lastTarget) == 0 {
 					alert(i.term, "Can't enter paste mode without a destination. Send a message to someone to select the destination")
 					continue
 				}
@@ -413,8 +421,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			possibleName := line[:pos]
 			for _, uid := range i.uids {
 				if possibleName == uid {
-					lastTarget = possibleName
-					i.term.SetPrompt(lastTarget + "> ")
+					i.lastTarget = possibleName
 					line = line[pos+2:]
 					break
 				}
@@ -422,12 +429,36 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 		}
 		i.lock.Unlock()
 
-		if len(lastTarget) == 0 {
+		if len(i.lastTarget) == 0 {
 			warn(i.term, "Start typing a Jabber address and hit tab to send a message to someone")
 			continue
 		}
-		commandsChan <- msgCommand{lastTarget, string(line)}
+		commandsChan <- msgCommand{i.lastTarget, string(line), setPromptIsEncrypted}
+		isEncrypted := <-setPromptIsEncrypted
+		i.SetPromptForTarget(i.lastTarget, isEncrypted)
 	}
+}
+
+func (input *Input) SetPromptForTarget(target string, isEncrypted bool) {
+	input.lock.Lock()
+	isCurrent := input.lastTarget == target
+	input.lock.Unlock()
+
+	if !isCurrent {
+		return
+	}
+
+	prompt := make([]byte, 0, len(target)+16)
+	if isEncrypted {
+		prompt = append(prompt, input.term.Escape.Green...)
+	} else {
+		prompt = append(prompt, input.term.Escape.Red...)
+	}
+
+	prompt = append(prompt, target...)
+	prompt = append(prompt, input.term.Escape.Reset...)
+	prompt = append(prompt, '>', ' ')
+	input.term.SetPrompt(string(prompt))
 }
 
 func (input *Input) showHelp() {
