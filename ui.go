@@ -505,7 +505,7 @@ MainLoop:
 				s.config.Save()
 				// Tell the user the current state of the statuses
 				if s.config.HideStatusUpdates {
-					info(s.term, "Status updated disabled")
+					info(s.term, "Status updates disabled")
 				} else {
 					info(s.term, "Status updates enabled")
 				}
