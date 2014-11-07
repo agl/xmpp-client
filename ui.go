@@ -1244,6 +1244,17 @@ NextAdd:
 		if err != nil {
 			alert(s.term, "Failed to remove roster entry: "+err.Error())
 		}
+
+		// Filter out any known fingerprints.
+		newKnownFingerprints := make([]KnownFingerprint, 0, len(s.config.KnownFingerprints))
+		for _, fpr := range s.config.KnownFingerprints {
+			if fpr.UserId == jid {
+				continue
+			}
+			newKnownFingerprints = append(newKnownFingerprints, fpr)
+		}
+		s.config.KnownFingerprints = newKnownFingerprints
+		s.config.Save()
 	}
 
 	for _, entry := range toEdit {
