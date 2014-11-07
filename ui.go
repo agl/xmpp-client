@@ -192,7 +192,7 @@ func main() {
 		panic(err.Error())
 	}
 	defer terminal.Restore(0, oldState)
-	term := terminal.NewTerminal(os.Stdin, "> ")
+	term := terminal.NewTerminal(os.Stdin, "")
 	updateTerminalSize(term)
 
 	resizeChan := make(chan os.Signal)
@@ -235,6 +235,7 @@ func main() {
 			return
 		}
 	}
+	term.SetPrompt("> ")
 
 	parts := strings.SplitN(config.Account, "@", 2)
 	if len(parts) != 2 {
