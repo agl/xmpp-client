@@ -643,6 +643,15 @@ MainLoop:
 				if err := s.conn.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
 					alert(term, "Failed to send IQ message: "+err.Error())
 				}
+			case *xmpp.StreamError:
+				var text string
+				if len(stanza.Text) > 0 {
+					text = stanza.Text
+				} else {
+					text = fmt.Sprintf("%s", stanza.Any)
+				}
+				alert(term, "Exiting in response to fatal error from server: "+text)
+				break MainLoop
 			default:
 				info(term, fmt.Sprintf("%s %s", rawStanza.Name, rawStanza.Value))
 			}
