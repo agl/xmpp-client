@@ -194,6 +194,8 @@ func main() {
 	defer terminal.Restore(0, oldState)
 	term := terminal.NewTerminal(os.Stdin, "")
 	updateTerminalSize(term)
+	term.SetBracketedPasteMode(true)
+	defer term.SetBracketedPasteMode(false)
 
 	resizeChan := make(chan os.Signal)
 	go func() {

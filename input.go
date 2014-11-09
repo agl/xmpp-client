@@ -364,6 +364,14 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 		}
 
 		line, err := i.term.ReadLine()
+		if err == terminal.ErrPasteIndicator {
+			if len(i.lastTarget) == 0 {
+				alert(i.term, "Pasted line ignored. Send a message to someone to select the destination.")
+			} else {
+				commandsChan <- msgCommand{i.lastTarget, string(line), nil}
+			}
+			continue
+		}
 		if err != nil {
 			close(commandsChan)
 			return
@@ -373,7 +381,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			if l == "/nopaste" {
 				paste = false
 			} else {
-				commandsChan <- msgCommand{i.lastTarget, string(line), nil}
+				commandsChan <- msgCommand{i.lastTarget, l, nil}
 			}
 			continue
 		}
@@ -400,7 +408,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			}
 			if _, ok := cmd.(pasteCommand); ok {
 				if len(i.lastTarget) == 0 {
-					alert(i.term, "Can't enter paste mode without a destination. Send a message to someone to select the destination")
+					alert(i.term, "Can't enter paste mode without a destination. Send a message to someone to select the destination.")
 					continue
 				}
 				paste = true
