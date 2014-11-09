@@ -2,69 +2,8 @@ xmpp-client setup
 =================
 
     go get github.com/agl/xmpp-client
-    
-Build and run instructions for Ubuntu 12.04 (codename Precise Pangolin, go version 1.0)    
-   
-    ## Install go and co.
-    sudo apt-get install git golang mercurial 
-    
-    ## Set GOPATH
-    export GOPATH=$HOME/go 
 
-    ## Get xmpp-client source code
-    go get github.com/agl/xmpp-client
-
-    ## This command starts the client from the set GOPATH folder
-    $GOPATH/bin/xmpp-client 	   
-
-    ## If you want to set up an alias
-    echo "alias xmpp-client='$GOPATH/bin/xmpp-client' " >> ~/.bashrc
-     
-    ## Apply alias change in bash
-     . ~/.bashrc
-   
-    ## This alias now starts the client
-    xmpp-client
-
-
-Build and run instructions for Ubuntu 13.10 (codename Saucy Salamander, go version 1.1.2)
-    
-    sudo apt-get install git golang mercurial 
-    export GOPATH=$HOME/go 
-    go get github.com/agl/xmpp-client
-    $GOPATH/bin/xmpp-client  
-
-    echo "alias xmpp-client='$GOPATH/bin/xmpp-client' " >> ~/.bashrc
-     . ~/.bashrc
-    xmpp-client
-    
-
-Build and run instructions for Tails (tested on version 0.22.1, go version 1.2)  
-
-    ## Debian old-stable, on which Tails is currently based, doesn't have Go packages  
-    sudo apt-get install -t unstable golang
-    
-    ## Git is already included in tails so we only need to get Mercurial
-    sudo apt-get install mercurial
-    
-    ## Assuming you have created a persistant volume
-    export GOPATH=/home/amnesia/Persistent/go/
-    
-    go get github.com/agl/xmpp-client
-    $GOPATH/bin/xmpp-client
-    
-     
-Build and run instructions for Debian 7.4 (codename Wheezy, go version 1.0.2)
-
-    sudo apt-get install git golang mercurial 
-    export GOPATH=$HOME/go
-    go get github.com/agl/xmpp-client
-    $GOPATH/bin/xmpp-client 	   
-
-    echo "alias xmpp-client='$GOPATH/bin/xmpp-client' " >> ~/.bashrc
-    . ~/.bashrc
-    xmpp-client
-
+(If you don't have Go already installed then see below.)
 
 xmpp-client use
 ===============
@@ -96,3 +35,32 @@ Messages from others are written in a similar fashion: the address is omitted fo
 If a contact name isn't recognised before a colon then it's ignored. Don't assume that you're sending a message to who you think you are unless you tab completed the address.
 
 The client functions, but is very rudimentary.
+
+Installation instructions
+=========================
+
+Build and run instructions for Ubuntu 13.10 (codename Saucy Salamander, go version 1.1.2). Note the version of Go shipped with this distro is very old any may be broken now.
+
+    sudo apt-get install git golang mercurial
+    export GOPATH=$HOME/go
+    go get github.com/agl/xmpp-client
+    $GOPATH/bin/xmpp-client
+
+    ## If you want to set up an alias
+    echo "alias xmpp-client='$GOPATH/bin/xmpp-client' " >> ~/.bashrc
+    . ~/.bashrc
+    xmpp-client
+
+Build and run instructions for Tails (tested on version 0.22.1, go version 1.2)
+
+    ## Debian old-stable, on which Tails is currently based, doesn't have Go packages
+    sudo apt-get install -t unstable golang
+
+    ## Git is already included in tails so we only need to get Mercurial
+    sudo apt-get install mercurial
+
+    ## Assuming you have created a persistant volume
+    export GOPATH=/home/amnesia/Persistent/go/
+
+    go get github.com/agl/xmpp-client
+    $GOPATH/bin/xmpp-client
