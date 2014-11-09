@@ -773,7 +773,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	switch change {
 	case otr.NewKeys:
 		s.input.SetPromptForTarget(from, true)
-		info(s.term, fmt.Sprintf("New OTR session with %s established at %s", from, time.Now().Format(time.RubyDate)))
+		info(s.term, fmt.Sprintf("New OTR session with %s established", from))
 		printConversationInfo(*s, from, conversation)
 	case otr.ConversationEnded:
 		s.input.SetPromptForTarget(from, false)
