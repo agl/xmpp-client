@@ -187,7 +187,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	// List well known Tor hidden services.
 	knownTorDomain := map[string]string{
 		"jabber.ccc.de":             "okj7xc6j2szr2y75.onion",
-		"riseup.net":                "ztmc4p37hvues222.onion",
+		"riseup.net":                "4cjw6cwpeaeppfqz.onion",
 		"jabber.calyxinstitute.org": "ijeeynrc6x2uy5ob.onion",
 	}
 
