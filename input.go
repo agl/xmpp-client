@@ -549,7 +549,7 @@ func (i *Input) AutoComplete(line string, pos int, key rune) (string, int, bool)
 			newLine := string(a) + newValue + " " + line[pos:]
 			i.lastKeyWasCompletion = true
 			return newLine, len(a) + len(newValue) + 1, true
-		} else if strings.IndexAny(prefix, ": ") == -1 {
+		} else if len(prefix) > 0 && strings.IndexAny(prefix, ": \t") == -1 {
 			// We're completing a uid at the start of a
 			// conversation line.
 			newUser, ok := i.uidComplete.Find(prefix)
