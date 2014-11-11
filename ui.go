@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"flag"
@@ -217,7 +218,26 @@ func main() {
 		*configFile = filepath.Join(homeDir, ".xmpp-client")
 	}
 
-	config, err := ParseConfig(*configFile)
+	config, err := ParseConfig(*configFile, "")
+	if _, ok := err.(*json.SyntaxError); ok {
+		for {
+			var passphrase string
+			passphrase, err = term.ReadPassword("Passphrase to decrypt the config file (enter to exit): ")
+			if err != nil {
+				alert(term, "Failed to read password: "+err.Error())
+				return
+			}
+			if passphrase == "" {
+				return
+			}
+			config, err = ParseConfig(*configFile, passphrase)
+			if err != nil && err.Error() == "decryption failed" {
+				alert(term, "Wrong passphrase")
+			} else {
+				break
+			}
+		}
+	}
 	if err != nil {
 		alert(term, "Failed to parse config file: "+err.Error())
 		config = new(Config)
