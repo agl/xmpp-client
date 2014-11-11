@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/url"
 	"strconv"
@@ -207,6 +208,13 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 		domain = parts[1]
 		break
+	}
+
+	if config.secretkey != nil {
+		if config.Password, err = term.ReadPassword(fmt.Sprintf("Password for %s (enter not to save it, you'll have to type it on every login): ", config.Account)); err != nil {
+			alert(term, "Failed to read password: "+err.Error())
+			return false
+		}
 	}
 
 	term.SetPrompt("Enable debug logging to /tmp/xmpp-client-debug.log? ")
