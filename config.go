@@ -266,6 +266,17 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	config.OTRAutoStartSession = true
 	config.OTRAutoTearDown = false
 
+	// List well known server fingerprints.
+	knownTLSFingerprints := map[string]string{
+		"jabber.ccc.de": "630FF62F262E2ED3524E031F391B7296FD099ECA1064768874C449526F94A541",
+	}
+
+	// Autoconfigure well known server fingerprints.
+	if fingerprint, ok := knownTLSFingerprints[domain]; ok {
+		info(term, "It appears that you are using a well known server and we will use its pinned TLS fingerprint.")
+		config.ServerCertificateSHA256 = fingerprint
+	}
+
 	// List well known Tor hidden services.
 	knownTorDomain := map[string]string{
 		"jabber.ccc.de":             "okj7xc6j2szr2y75.onion",
