@@ -51,8 +51,11 @@ Build and run instructions for Ubuntu 13.10 (codename Saucy Salamander, go versi
     . ~/.bashrc
     xmpp-client
 
-Build and run instructions for Tails (tested on version 0.22.1, go version 1.2)
+Build and run instructions for Tails (tested on version 1.2, go version 1.2)
 
+    ## If you don't have already
+    sudo apt-get update
+    
     ## Debian old-stable, on which Tails is currently based, doesn't have Go packages
     sudo apt-get install -t unstable golang
 
