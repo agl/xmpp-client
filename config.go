@@ -6,19 +6,24 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/url"
 	"strconv"
 	"strings"
 
-	"code.google.com/p/go.crypto/otr"
-	"code.google.com/p/go.crypto/ssh/terminal"
-	"code.google.com/p/go.net/proxy"
 	"github.com/agl/xmpp"
+	"golang.org/x/crypto/nacl/secretbox"
+	"golang.org/x/crypto/otr"
+	"golang.org/x/crypto/scrypt"
+	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/net/proxy"
 )
 
 type Config struct {
-	filename                      string `json:"-"`
+	filename                      string    `json:"-"`
+	salt                          *[24]byte `json:"-"`
+	secretkey                     *[32]byte `json:"-"`
 	Account                       string
 	Server                        string   `json:",omitempty"`
 	Proxies                       []string `json:",omitempty"`
@@ -46,13 +51,51 @@ type KnownFingerprint struct {
 	fingerprint    []byte `json:"-"`
 }
 
-func ParseConfig(filename string) (c *Config, err error) {
+func deriveKey(passphrase []byte, salt *[24]byte) (*[32]byte, error) {
+	keySlice, err := scrypt.Key(passphrase, salt[:], 1<<20, 8, 1, 32)
+	if err != nil {
+		return nil, err
+	}
+
+	var k [32]byte
+	copy(k[:], keySlice)
+
+	return &k, nil
+}
+
+func ParseConfig(filename, passphrase string) (c *Config, err error) {
 	contents, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return
 	}
 
 	c = new(Config)
+
+	if passphrase != "" {
+		var salt [24]byte
+		copy(salt[:], contents[:24])
+		contents = contents[24:]
+		c.salt = &salt
+
+		var nonce [24]byte
+		copy(nonce[:], contents[:24])
+		contents = contents[24:]
+
+		c.secretkey, err = deriveKey([]byte(passphrase), c.salt)
+		if err != nil {
+			return
+		}
+
+		out := make([]byte, 0, len(contents)-secretbox.Overhead)
+		out, ok := secretbox.Open(out, contents, &nonce, c.secretkey)
+		if !ok {
+			err = errors.New("decryption failed")
+			return
+		}
+
+		contents = out
+	}
+
 	if err = json.Unmarshal(contents, &c); err != nil {
 		return
 	}
@@ -79,6 +122,21 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
+
+	if c.secretkey != nil {
+		var nonce [24]byte
+		_, err = rand.Read(nonce[:])
+		if err != nil {
+			return err
+		}
+
+		out := make([]byte, 0, len(c.salt)+len(nonce)+len(contents)+secretbox.Overhead)
+		out = append(out, c.salt[:]...)
+		out = append(out, nonce[:]...)
+		out = secretbox.Seal(out, contents, &nonce, c.secretkey)
+		contents = out
+	}
+
 	return ioutil.WriteFile(c.filename, contents, 0600)
 }
 
@@ -119,6 +177,23 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	var err error
 	warn(term, "Enrolling new config file")
 
+	if passphrase, err := term.ReadPassword("Passphrase to encrypt the config file (enter for unencrypted): "); err != nil {
+		return false
+	} else if passphrase != "" {
+		var salt [24]byte
+		config.salt = &salt
+
+		_, err = rand.Read(salt[:])
+		if err != nil {
+			return false
+		}
+
+		config.secretkey, err = deriveKey([]byte(passphrase), config.salt)
+		if err != nil {
+			return false
+		}
+	}
+
 	var domain string
 	for {
 		term.SetPrompt("Account (i.e. user@example.com, enter to quit): ")
@@ -133,6 +208,13 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 		domain = parts[1]
 		break
+	}
+
+	if config.secretkey != nil {
+		if config.Password, err = term.ReadPassword(fmt.Sprintf("Password for %s (enter not to save it, you'll have to type it on every login): ", config.Account)); err != nil {
+			alert(term, "Failed to read password: "+err.Error())
+			return false
+		}
 	}
 
 	term.SetPrompt("Enable debug logging to /tmp/xmpp-client-debug.log? ")
@@ -183,6 +265,17 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	config.OTRAutoAppendTag = true
 	config.OTRAutoStartSession = true
 	config.OTRAutoTearDown = false
+
+	// List well known server fingerprints.
+	knownTLSFingerprints := map[string]string{
+		"jabber.ccc.de": "630FF62F262E2ED3524E031F391B7296FD099ECA1064768874C449526F94A541",
+	}
+
+	// Autoconfigure well known server fingerprints.
+	if fingerprint, ok := knownTLSFingerprints[domain]; ok {
+		info(term, "It appears that you are using a well known server and we will use its pinned TLS fingerprint.")
+		config.ServerCertificateSHA256 = fingerprint
+	}
 
 	// List well known Tor hidden services.
 	knownTorDomain := map[string]string{
