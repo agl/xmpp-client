@@ -566,7 +566,7 @@ MainLoop:
 				for to, conversation := range s.conversations {
 					if conversation.IsEncrypted() {
 						info(s.term, fmt.Sprintf("Secure session with %s underway:", to))
-						printConversationInfo(s, to, conversation)
+						printConversationInfo(&s, to, conversation)
 					}
 				}
 			case endOTRCommand:
@@ -776,7 +776,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	case otr.NewKeys:
 		s.input.SetPromptForTarget(from, true)
 		info(s.term, fmt.Sprintf("New OTR session with %s established", from))
-		printConversationInfo(*s, from, conversation)
+		printConversationInfo(s, from, conversation)
 	case otr.ConversationEnded:
 		s.input.SetPromptForTarget(from, false)
 		// This is probably unsafe without a policy that _forces_ crypto to
@@ -1408,7 +1408,7 @@ func (l *lineLogger) Write(data []byte) (int, error) {
 	return origLen, nil
 }
 
-func printConversationInfo(s Session, uid string, conversation *otr.Conversation) {
+func printConversationInfo(s *Session, uid string, conversation *otr.Conversation) {
 	fpr := conversation.TheirPublicKey.Fingerprint()
 	fprUid := s.config.UserIdForFingerprint(fpr)
 	info(s.term, fmt.Sprintf("  Fingerprint  for %s: %x", uid, fpr))
