@@ -189,6 +189,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		"jabber.ccc.de":             "okj7xc6j2szr2y75.onion",
 		"riseup.net":                "4cjw6cwpeaeppfqz.onion",
 		"jabber.calyxinstitute.org": "ijeeynrc6x2uy5ob.onion",
+		"jabber.otr.im":             "5rgdtlawqkcplz75.onion",
 	}
 
 	// Autoconfigure well known Tor hidden services.
