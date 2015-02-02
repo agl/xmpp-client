@@ -1327,7 +1327,7 @@ EachValue:
 	for _, v := range a {
 		for _, v2 := range b {
 			if v == v2 {
-				break EachValue
+				continue EachValue
 			}
 		}
 		return false
