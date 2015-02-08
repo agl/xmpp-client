@@ -20,6 +20,7 @@ var uiCommands = []uiCommand{
 	{"add", addCommand{}, "Request a subscription to another user's presence"},
 	{"away", awayCommand{}, "Set your status to Away"},
 	{"chat", chatCommand{}, "Set your status to Available for Chat"},
+	{"close", closeCommand{}, "Forget current chat target"},
 	{"confirm", confirmCommand{}, "Confirm an inbound subscription request"},
 	{"deny", denyCommand{}, "Deny an inbound subscription request"},
 	{"dnd", dndCommand{}, "Set your status to Busy / Do Not Disturb"},
@@ -64,6 +65,7 @@ type authQACommand struct {
 
 type awayCommand struct{}
 type chatCommand struct{}
+type closeCommand struct{}
 
 type confirmCommand struct {
 	User string "uid"
@@ -418,6 +420,11 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			}
 			if _, ok := cmd.(noPasteCommand); ok {
 				paste = false
+				continue
+			}
+			if _, ok := cmd.(closeCommand); ok {
+				i.lastTarget = ""
+				i.term.SetPrompt("> ")
 				continue
 			}
 			if cmd != nil {
