@@ -51,16 +51,19 @@ type authCommand struct {
 	Secret string
 }
 
+type authOobCommand struct {
+	User        string "uid"
+	Fingerprint string
+}
+
 type authQACommand struct {
 	User     string "uid"
 	Question string
 	Secret   string
 }
 
-type authOobCommand struct {
-	User        string "uid"
-	Fingerprint string
-}
+type awayCommand struct{}
+type chatCommand struct{}
 
 type confirmCommand struct {
 	User string "uid"
@@ -70,38 +73,13 @@ type denyCommand struct {
 	User string "uid"
 }
 
+type dndCommand struct{}
+
 type endOTRCommand struct {
 	User string "uid"
 }
 
 type helpCommand struct{}
-type pasteCommand struct{}
-type noPasteCommand struct{}
-type awayCommand struct{}
-type chatCommand struct{}
-type dndCommand struct{}
-type xaCommand struct{}
-type onlineCommand struct{}
-
-type quitCommand struct {
-}
-
-type rosterCommand struct {
-	OnlineOnly bool "flag:online"
-}
-
-type rosterEditCommand struct{}
-type rosterEditDoneCommand struct{}
-
-type otrCommand struct {
-	User string "uid"
-}
-
-type otrInfoCommand struct{}
-
-type versionCommand struct {
-	User string "uid"
-}
 
 type msgCommand struct {
 	to  string
@@ -113,7 +91,31 @@ type msgCommand struct {
 	setPromptIsEncrypted chan<- bool
 }
 
+type noPasteCommand struct{}
+type onlineCommand struct{}
+
+type otrCommand struct {
+	User string "uid"
+}
+
+type otrInfoCommand struct{}
+
+type pasteCommand struct{}
+type quitCommand struct{}
+
+type rosterCommand struct {
+	OnlineOnly bool "flag:online"
+}
+
+type rosterEditCommand struct{}
+type rosterEditDoneCommand struct{}
 type toggleStatusUpdatesCommand struct{}
+
+type versionCommand struct {
+	User string "uid"
+}
+
+type xaCommand struct{}
 
 func numPositionalFields(t reflect.Type) int {
 	for i := 0; i < t.NumField(); i++ {
