@@ -21,6 +21,7 @@ var uiCommands = []uiCommand{
 	{"away", awayCommand{}, "Set your status to Away"},
 	{"chat", chatCommand{}, "Set your status to Available for Chat"},
 	{"confirm", confirmCommand{}, "Confirm an inbound subscription request"},
+	{"cleartarget", clearCommand{}, "Reset prompt to untargeted state"},
 	{"deny", denyCommand{}, "Deny an inbound subscription request"},
 	{"dnd", dndCommand{}, "Set your status to Busy / Do Not Disturb"},
 	{"help", helpCommand{}, "List known commands"},
@@ -82,6 +83,8 @@ type chatCommand struct{}
 type dndCommand struct{}
 type xaCommand struct{}
 type onlineCommand struct{}
+
+type clearCommand struct{}
 
 type quitCommand struct {
 }
@@ -417,6 +420,12 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			if _, ok := cmd.(noPasteCommand); ok {
 				paste = false
 				continue
+			}
+			if _, ok := cmd.(clearCommand); ok {
+				i.lock.Lock()
+				i.lastTarget = ""
+				i.term.SetPrompt("> ")
+				i.lock.Unlock()
 			}
 			if cmd != nil {
 				commandsChan <- cmd
