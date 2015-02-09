@@ -72,11 +72,11 @@ Build and run instructions for Tails (tested on version 1.2, go version 1.2)
     ## If you don't have already
     sudo apt-get update
     
-    ## Debian old-stable, on which Tails is currently based, doesn't have Go packages
+    ## Debian stable, on which Tails is currently based, contains an outdated Go package.
     sudo apt-get install -t unstable golang
 
     ## Assuming you have created a persistent volume
     export GOPATH=/home/amnesia/Persistent/go/
-
     go get github.com/agl/xmpp-client
+
     ~/Persistent/go/bin/xmpp-client
