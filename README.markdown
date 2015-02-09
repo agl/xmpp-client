@@ -59,10 +59,11 @@ Build and run instructions for Ubuntu 13.10 (codename Saucy Salamander, go versi
     sudo apt-get install git golang
     export GOPATH=$HOME/go
     go get github.com/agl/xmpp-client
-    $GOPATH/bin/xmpp-client
+
+    ~/go/bin/xmpp-client
 
     ## If you want to set up an alias
-    echo "alias xmpp-client='$GOPATH/bin/xmpp-client' " >> ~/.bashrc
+    echo "alias xmpp-client='$HOME/go/bin/xmpp-client' " >> ~/.bashrc
     . ~/.bashrc
     xmpp-client
 
@@ -74,8 +75,8 @@ Build and run instructions for Tails (tested on version 1.2, go version 1.2)
     ## Debian old-stable, on which Tails is currently based, doesn't have Go packages
     sudo apt-get install -t unstable golang
 
-    ## Assuming you have created a persistant volume
+    ## Assuming you have created a persistent volume
     export GOPATH=/home/amnesia/Persistent/go/
 
     go get github.com/agl/xmpp-client
-    $GOPATH/bin/xmpp-client
+    ~/Persistent/go/bin/xmpp-client
