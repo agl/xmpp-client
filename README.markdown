@@ -22,15 +22,30 @@ Messages are sent by entering the JID of a contact and hitting tab to complete t
 
     > friend@example.com: Hi there!
 
-On subsequent lines you don't have to enter their address again, unless you want to direct messages to someone else:
+On subsequent lines the address of the current chat target is contained in the prompt and you don't have to enter it again, unless you want to direct messages to someone else:
 
     > friend@example.com: Hi there!
-    > I was thinking
-    > about that thing
-    > otherfriend@example.com: I'll be right with you!
-    > friend@example.com: back again
+    > friend@example.com> I was thinking
+    > friend@example.com> about that thing
+    > friend@example.com> otherfriend@example.com: I'll be right with you!
+    > otherfriend@example.com> friend@example.com: back again
+    > friend@example.com> ...
 
-Messages from others are written in a similar fashion: the address is omitted for subsequent lines and replaced with a colon. The colon is red for unencrypted and green for encrypted.
+You can also clear the current chat target using the /close command.
+
+    > friend@example.com: Hi there!
+    > friend@example.com> I was thinking about that thing.
+    > friend@example.com> /close
+    >
+    > otherfriend@example.com: Where were we?
+
+Messages from others are written in a similar fashion:
+
+    > friend@example.com: Where were we at?
+    (Feb  9 20:40:22) : friend@example.com: You wanted to tell me
+    (Feb  9 20:40:27) : friend@example.com: about that thing.
+
+The addresses are always red for unencrypted and green for encrypted chats.
 
 If a contact name isn't recognised before a colon then it's ignored. Don't assume that you're sending a message to who you think you are unless you tab completed the address.
 
