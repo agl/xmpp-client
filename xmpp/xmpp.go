@@ -182,6 +182,20 @@ func (c *Conn) RequestRoster() (<-chan Stanza, Cookie, error) {
 	return ch, cookie, nil
 }
 
+type rosterEntries []RosterEntry
+
+func (entries rosterEntries) Len() int {
+	return len(entries)
+}
+
+func (entries rosterEntries) Less(i, j int) bool {
+	return entries[i].Jid < entries[j].Jid
+}
+
+func (entries rosterEntries) Swap(i, j int) {
+	entries[i], entries[j] = entries[j], entries[i]
+}
+
 // ParseRoster extracts roster information from the given Stanza.
 func ParseRoster(reply Stanza) ([]RosterEntry, error) {
 	iq, ok := reply.Value.(*ClientIQ)
@@ -193,6 +207,7 @@ func ParseRoster(reply Stanza) ([]RosterEntry, error) {
 	if err := xml.NewDecoder(bytes.NewBuffer(iq.Query)).Decode(&roster); err != nil {
 		return nil, err
 	}
+	sort.Sort(rosterEntries(roster.Item))
 	return roster.Item, nil
 }
 
