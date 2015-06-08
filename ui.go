@@ -3,12 +3,17 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/agl/xmpp-client/xmpp"
+	"github.com/mattn/go-gtk/gtk"
+	"golang.org/x/crypto/otr"
+	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/net/html"
+	"golang.org/x/net/proxy"
 	"io"
 	"io/ioutil"
 	"net/url"
@@ -21,13 +26,14 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/agl/xmpp-client/xmpp"
-	"golang.org/x/crypto/otr"
-	"golang.org/x/crypto/ssh/terminal"
-	"golang.org/x/net/html"
-	"golang.org/x/net/proxy"
 )
+
+// GUI variables initialized so that the display() and
+// buildGUI() functions don't create "undefined" errors
+var window *gtk.Window
+var statusTabView *gtk.TextView
+var convoTabView *gtk.TextView
+var contactsView *gtk.TextView
 
 var configFile *string = flag.String("config-file", "", "Location of the config file")
 var createAccount *bool = flag.Bool("create", false, "If true, attempt to create account")
@@ -49,6 +55,8 @@ var OTRWhitespaceTag = append(OTRWhitespaceTagStart, OTRWhiteSpaceTagV2...)
 func appendTerminalEscaped(out, msg []byte) []byte {
 	for _, c := range msg {
 		if c == 127 || (c < 32 && c != '\t') {
+
+			// This is the "? after the error message for an unknown command.
 			out = append(out, '?')
 		} else {
 			out = append(out, c)
@@ -74,13 +82,11 @@ loop:
 			break loop
 		}
 	}
-
 	return
 }
 
 func terminalMessage(term *terminal.Terminal, color []byte, msg string, critical bool) {
 	line := make([]byte, 0, len(msg)+16)
-
 	line = append(line, ' ')
 	line = append(line, color...)
 	line = append(line, '*')
@@ -114,11 +120,14 @@ func critical(term *terminal.Terminal, msg string) {
 }
 
 type Session struct {
-	account string
-	conn    *xmpp.Conn
-	term    *terminal.Terminal
-	roster  []xmpp.RosterEntry
-	input   Input
+	account       string
+	conn          *xmpp.Conn
+	term          *terminal.Terminal
+	statusTabView *gtk.TextView // added member
+	convoTabView  *gtk.TextView // added member
+	contactsView  *gtk.TextView // added member
+	roster        []xmpp.RosterEntry
+	input         Input
 	// conversations maps from a JID (without the resource) to an OTR
 	// conversation. (Note that unencrypted conversations also pass through
 	// OTR.)
@@ -167,10 +176,16 @@ type rosterEdit struct {
 
 func (s *Session) readMessages(stanzaChan chan<- xmpp.Stanza) {
 	defer close(stanzaChan)
-
 	for {
 		stanza, err := s.conn.Next()
 		if err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, s.statusTabView, err.Error(), nil)
+			}
+			// -GUI
+
 			alert(s.term, err.Error())
 			return
 		}
@@ -187,6 +202,15 @@ func updateTerminalSize(term *terminal.Terminal) {
 }
 
 func main() {
+
+	// GTK GUI block
+	if guiMode == 1 {
+		initializeGTK()
+		window, statusTabView, convoTabView, contactsView = buildGUI() // Assemble the GUI and get display vars
+		window.ShowAll()                                               // Display the GTK window and its contents
+	}
+	// End GTK BLOCK -- call to gtk.Main() deferred until the end of main()
+
 	flag.Parse()
 
 	oldState, err := terminal.MakeRaw(0)
@@ -210,6 +234,13 @@ func main() {
 	if len(*configFile) == 0 {
 		homeDir := os.Getenv("HOME")
 		if len(homeDir) == 0 {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, statusTabView, "$HOME not set. Please either export $HOME or use the -config-file option.\n", nil)
+			}
+			// -GUI
+
 			alert(term, "$HOME not set. Please either export $HOME or use the -config-file option.\n")
 			return
 		}
@@ -223,6 +254,13 @@ func main() {
 
 	config, err := ParseConfig(*configFile)
 	if err != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, statusTabView, "Failed to parse config file: "+err.Error(), nil)
+		}
+		// -GUI
+
 		alert(term, "Failed to parse config file: "+err.Error())
 		config = new(Config)
 		if !enroll(config, term) {
@@ -235,6 +273,13 @@ func main() {
 	password := config.Password
 	if len(password) == 0 {
 		if password, err = term.ReadPassword(fmt.Sprintf("Password for %s (will not be saved to disk): ", config.Account)); err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, statusTabView, "Failed to read password: "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(term, "Failed to read password: "+err.Error())
 			return
 		}
@@ -243,7 +288,14 @@ func main() {
 
 	parts := strings.SplitN(config.Account, "@", 2)
 	if len(parts) != 2 {
-		alert(term, "invalid username (want user@domain): "+config.Account)
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, statusTabView, "Invalid username (want user@domain): "+err.Error(), nil)
+		}
+		// -GUI
+
+		alert(term, "Invalid username (want user@domain): "+config.Account)
 		return
 	}
 	user := parts[0]
@@ -257,6 +309,13 @@ func main() {
 		addrTrusted = true
 	} else {
 		if len(config.Proxies) > 0 {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, statusTabView, "Cannot connect via a proxy without Server and Port being set in the config file as an SRV lookup would leak information.", nil)
+			}
+			// -GUI
+
 			alert(term, "Cannot connect via a proxy without Server and Port being set in the config file as an SRV lookup would leak information.")
 			return
 		}
@@ -272,6 +331,13 @@ func main() {
 	for i := len(config.Proxies) - 1; i >= 0; i-- {
 		u, err := url.Parse(config.Proxies[i])
 		if err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, statusTabView, "Failed to parse "+config.Proxies[i]+" as a URL: "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(term, "Failed to parse "+config.Proxies[i]+" as a URL: "+err.Error())
 			return
 		}
@@ -279,6 +345,13 @@ func main() {
 			dialer = proxy.Direct
 		}
 		if dialer, err = proxy.FromURL(u, dialer); err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, statusTabView, "Failed to parse "+config.Proxies[i]+" as a proxy: "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(term, "Failed to parse "+config.Proxies[i]+" as a proxy: "+err.Error())
 			return
 		}
@@ -288,10 +361,24 @@ func main() {
 	if len(config.ServerCertificateSHA256) > 0 {
 		certSHA256, err = hex.DecodeString(config.ServerCertificateSHA256)
 		if err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, statusTabView, "Failed to parse ServerCertificateSHA256 (should be hex string): "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(term, "Failed to parse ServerCertificateSHA256 (should be hex string): "+err.Error())
 			return
 		}
 		if len(certSHA256) != 32 {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, statusTabView, "ServerCertificateSHA256 is not 32 bytes long", nil)
+			}
+			// -GUI
+
 			alert(term, "ServerCertificateSHA256 is not 32 bytes long")
 			return
 		}
@@ -317,28 +404,20 @@ func main() {
 				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			},
+				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA},
 		},
-	}
-
-	if domain == "jabber.ccc.de" {
-		// jabber.ccc.de uses CACert but distros are removing that root
-		// certificate.
-		roots := x509.NewCertPool()
-		caCertRoot, err := x509.ParseCertificate(caCertRootDER)
-		if err == nil {
-			alert(term, "Temporarily trusting only CACert root for CCC Jabber server")
-			roots.AddCert(caCertRoot)
-			xmppConfig.TLSConfig.RootCAs = roots
-		} else {
-			alert(term, "Tried to add CACert root for jabber.ccc.de but failed: "+err.Error())
-		}
 	}
 
 	if len(config.RawLogFile) > 0 {
 		rawLog, err := os.OpenFile(config.RawLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, statusTabView, "Failed to open raw log file: "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(term, "Failed to open raw log file: "+err.Error())
 			return
 		}
@@ -364,8 +443,23 @@ func main() {
 	}
 
 	if dialer != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, statusTabView, "Making connection to "+addr+" via proxy", nil)
+		}
+		// -GUI
+
 		info(term, "Making connection to "+addr+" via proxy")
+
 		if xmppConfig.Conn, err = dialer.Dial("tcp", addr); err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, statusTabView, "Failed to connect via proxy: "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(term, "Failed to connect via proxy: "+err.Error())
 			return
 		}
@@ -373,6 +467,13 @@ func main() {
 
 	conn, err := xmpp.Dial(addr, user, domain, password, xmppConfig)
 	if err != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, statusTabView, "Failed to connect to XMPP server: "+err.Error(), nil)
+		}
+		// -GUI
+
 		alert(term, "Failed to connect to XMPP server: "+err.Error())
 		return
 	}
@@ -381,6 +482,9 @@ func main() {
 		account:           config.Account,
 		conn:              conn,
 		term:              term,
+		statusTabView:     statusTabView, // GUI -- added member
+		convoTabView:      convoTabView,  // GUI -- added member
+		contactsView:      contactsView,  // GUI -- added member
 		conversations:     make(map[string]*otr.Conversation),
 		knownStates:       make(map[string]string),
 		privateKey:        new(otr.PrivateKey),
@@ -389,11 +493,25 @@ func main() {
 		pendingSubscribes: make(map[string]string),
 		lastActionTime:    time.Now(),
 	}
+
+	// +GUI
+	if guiMode == 1 {
+		g.display(INFO, statusTabView, "Fetching roster", nil)
+	}
+	// -GUI
+
 	info(term, "Fetching roster")
 
 	//var rosterReply chan xmpp.Stanza
 	rosterReply, _, err := s.conn.RequestRoster()
 	if err != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, statusTabView, "Failed to request roster: "+err.Error(), nil)
+		}
+		// -GUI
+
 		alert(term, "Failed to request roster: "+err.Error())
 		return
 	}
@@ -404,290 +522,632 @@ func main() {
 		term:        term,
 		uidComplete: new(priorityList),
 	}
-	commandChan := make(chan interface{})
-	go s.input.ProcessCommands(commandChan)
 
+	// This is the channel that receives commands from input.
+	commandChan := make(chan interface{})
+
+	// Modified for GUI mode check
+	if guiMode == 1 {
+		go s.input.GuiProcessCommands(commandChan)
+	} else {
+		go s.input.ProcessCommands(commandChan)
+	}
+
+	// This is the channel that receives incoming messages.
 	stanzaChan := make(chan xmpp.Stanza)
 	go s.readMessages(stanzaChan)
 
 	s.privateKey.Parse(config.PrivateKey)
 	s.timeouts = make(map[xmpp.Cookie]time.Time)
 
+	// +GUI -- Some formatting irregularities on this one, solved.
+	if guiMode == 1 {
+		key := fmt.Sprintf("Your fingerprint is %x", s.privateKey.Fingerprint())
+		g.display(INFO, statusTabView, key, nil)
+	}
+	// -GUI
+
 	info(term, fmt.Sprintf("Your fingerprint is %x", s.privateKey.Fingerprint()))
 
 	ticker := time.NewTicker(1 * time.Second)
 
-MainLoop:
-	for {
-		select {
-		case now := <-ticker.C:
-			haveExpired := false
-			for _, expiry := range s.timeouts {
-				if now.After(expiry) {
-					haveExpired = true
-					break
-				}
-			}
-			if !haveExpired {
-				continue
-			}
+	// MainLoop: Converted to a goroutine so it can run concurrently with the GUI
+	// This will need to be reverted and wrapped in a conditional once the
+	// GUI and CLI versions are separated completely.
 
-			newTimeouts := make(map[xmpp.Cookie]time.Time)
-			for cookie, expiry := range s.timeouts {
-				if now.After(expiry) {
-					s.conn.Cancel(cookie)
+	//		if guiMode == 1 {
+	//			MainLoop:
+	//		} else {
+	//			go func() {
+	//		}
+
+	if guiMode == 0 {
+	MainLoop:
+
+		for {
+			select {
+			case now := <-ticker.C:
+				haveExpired := false
+				for _, expiry := range s.timeouts {
+					if now.After(expiry) {
+						haveExpired = true
+						break
+					}
+				}
+				if !haveExpired {
+					continue
+				}
+
+				newTimeouts := make(map[xmpp.Cookie]time.Time)
+				for cookie, expiry := range s.timeouts {
+					if now.After(expiry) {
+						s.conn.Cancel(cookie)
+					} else {
+						newTimeouts[cookie] = expiry
+					}
+				}
+				s.timeouts = newTimeouts
+
+			case edit := <-s.pendingRosterChan:
+				if !edit.isComplete {
+					info(s.term, "Please edit "+edit.fileName+" and run /rostereditdone when complete")
+					s.pendingRosterEdit = edit
+					continue
+				}
+				if s.processEditedRoster(edit) {
+					s.pendingRosterEdit = nil
 				} else {
-					newTimeouts[cookie] = expiry
+					alert(s.term, "Please reedit file and run /rostereditdone again")
 				}
-			}
-			s.timeouts = newTimeouts
 
-		case edit := <-s.pendingRosterChan:
-			if !edit.isComplete {
-				info(s.term, "Please edit "+edit.fileName+" and run /rostereditdone when complete")
-				s.pendingRosterEdit = edit
-				continue
-			}
-			if s.processEditedRoster(edit) {
-				s.pendingRosterEdit = nil
-			} else {
-				alert(s.term, "Please reedit file and run /rostereditdone again")
-			}
+			case rosterStanza, ok := <-rosterReply:
+				if !ok {
+					alert(s.term, "Failed to read roster: "+err.Error())
+					return
+				}
+				if s.roster, err = xmpp.ParseRoster(rosterStanza); err != nil {
+					alert(s.term, "Failed to parse roster: "+err.Error())
+					return
+				}
+				for _, entry := range s.roster {
+					s.input.AddUser(entry.Jid)
+				}
+				info(s.term, "Roster received")
 
-		case rosterStanza, ok := <-rosterReply:
-			if !ok {
-				alert(s.term, "Failed to read roster: "+err.Error())
-				return
-			}
-			if s.roster, err = xmpp.ParseRoster(rosterStanza); err != nil {
-				alert(s.term, "Failed to parse roster: "+err.Error())
-				return
-			}
-			for _, entry := range s.roster {
-				s.input.AddUser(entry.Jid)
-			}
-			info(s.term, "Roster received")
+			// Here is where commands, including msgCommand, are directed.
 
-		case cmd, ok := <-commandChan:
-			if !ok {
-				warn(term, "Exiting because command channel closed")
-				break MainLoop
-			}
-			s.lastActionTime = time.Now()
-			switch cmd := cmd.(type) {
-			case quitCommand:
-				for to, conversation := range s.conversations {
+			case cmd, ok := <-commandChan:
+				if !ok {
+					warn(term, "Exiting because command channel closed")
+					break MainLoop
+				}
+				s.lastActionTime = time.Now()
+				switch cmd := cmd.(type) {
+				case quitCommand:
+					for to, conversation := range s.conversations {
+						msgs := conversation.End()
+						for _, msg := range msgs {
+							s.conn.Send(to, string(msg))
+						}
+					}
+					break MainLoop
+
+				case versionCommand:
+					replyChan, cookie, err := s.conn.SendIQ(cmd.User, "get", xmpp.VersionQuery{})
+					if err != nil {
+						alert(s.term, "Error sending version request: "+err.Error())
+						continue
+					}
+					s.timeouts[cookie] = time.Now().Add(5 * time.Second)
+					go s.awaitVersionReply(replyChan, cmd.User)
+				case rosterCommand:
+					info(s.term, "Current roster:")
+					maxLen := 0
+					for _, item := range s.roster {
+						if maxLen < len(item.Jid) {
+							maxLen = len(item.Jid)
+						}
+					}
+
+					for _, item := range s.roster {
+						state, ok := s.knownStates[item.Jid]
+
+						line := ""
+						if ok {
+							line += "[*] "
+						} else if cmd.OnlineOnly {
+							continue
+						} else {
+							line += "[ ] "
+						}
+
+						line += item.Jid
+						numSpaces := 1 + (maxLen - len(item.Jid))
+						for i := 0; i < numSpaces; i++ {
+							line += " "
+						}
+						line += item.Subscription + "\t" + item.Name
+						if ok {
+							line += "\t" + state
+						}
+						info(s.term, line)
+					}
+				case rosterEditCommand:
+					if s.pendingRosterEdit != nil {
+						warn(s.term, "Aborting previous roster edit")
+						s.pendingRosterEdit = nil
+					}
+					rosterCopy := make([]xmpp.RosterEntry, len(s.roster))
+					copy(rosterCopy, s.roster)
+					go s.editRoster(rosterCopy)
+				case rosterEditDoneCommand:
+					if s.pendingRosterEdit == nil {
+						warn(s.term, "No roster edit in progress. Use /rosteredit to start one")
+						continue
+					}
+					go s.loadEditedRoster(*s.pendingRosterEdit)
+				case toggleStatusUpdatesCommand:
+					s.config.HideStatusUpdates = !s.config.HideStatusUpdates
+					s.config.Save()
+					// Tell the user the current state of the statuses
+					if s.config.HideStatusUpdates {
+						info(s.term, "Status updates disabled")
+					} else {
+						info(s.term, "Status updates enabled")
+					}
+				case confirmCommand:
+					s.handleConfirmOrDeny(cmd.User, true /* confirm */)
+				case denyCommand:
+					s.handleConfirmOrDeny(cmd.User, false /* deny */)
+				case addCommand:
+					s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
+
+				// OUTGOING MESSAGES
+
+				case msgCommand:
+					conversation, ok := s.conversations[cmd.to]
+					isEncrypted := ok && conversation.IsEncrypted()
+					if cmd.setPromptIsEncrypted != nil {
+						cmd.setPromptIsEncrypted <- isEncrypted
+					}
+					if !isEncrypted && config.ShouldEncryptTo(cmd.to) {
+						warn(s.term, fmt.Sprintf("Did not send: no encryption established with %s", cmd.to))
+						continue
+					}
+					var msgs [][]byte
+					message := []byte(cmd.msg)
+					// Automatically tag all outgoing plaintext
+					// messages with a whitespace tag that
+					// indicates that we support OTR.
+					if config.OTRAutoAppendTag &&
+						!bytes.Contains(message, []byte("?OTR")) &&
+						(!ok || !conversation.IsEncrypted()) {
+						message = append(message, OTRWhitespaceTag...)
+					}
+					if ok {
+						var err error
+						msgs, err = conversation.Send(message)
+						if err != nil {
+							alert(s.term, err.Error())
+							break
+						}
+					} else {
+						msgs = [][]byte{[]byte(message)}
+					}
+					for _, message := range msgs {
+						s.conn.Send(cmd.to, string(message))
+					}
+
+				case otrCommand:
+					s.conn.Send(string(cmd.User), otr.QueryMessage)
+				case otrInfoCommand:
+					info(term, fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()))
+					for to, conversation := range s.conversations {
+						if conversation.IsEncrypted() {
+							info(s.term, fmt.Sprintf("Secure session with %s underway:", to))
+							printConversationInfo(&s, to, conversation)
+						}
+					}
+				case endOTRCommand:
+					to := string(cmd.User)
+					conversation, ok := s.conversations[to]
+					if !ok {
+						alert(s.term, "No secure session established")
+						break
+					}
 					msgs := conversation.End()
 					for _, msg := range msgs {
 						s.conn.Send(to, string(msg))
 					}
-				}
-				break MainLoop
-			case versionCommand:
-				replyChan, cookie, err := s.conn.SendIQ(cmd.User, "get", xmpp.VersionQuery{})
-				if err != nil {
-					alert(s.term, "Error sending version request: "+err.Error())
-					continue
-				}
-				s.timeouts[cookie] = time.Now().Add(5 * time.Second)
-				go s.awaitVersionReply(replyChan, cmd.User)
-			case rosterCommand:
-				info(s.term, "Current roster:")
-				maxLen := 0
-				for _, item := range s.roster {
-					if maxLen < len(item.Jid) {
-						maxLen = len(item.Jid)
-					}
-				}
-
-				for _, item := range s.roster {
-					state, ok := s.knownStates[item.Jid]
-
-					line := ""
-					if ok {
-						line += "[*] "
-					} else if cmd.OnlineOnly {
-						continue
-					} else {
-						line += "[ ] "
-					}
-
-					line += item.Jid
-					numSpaces := 1 + (maxLen - len(item.Jid))
-					for i := 0; i < numSpaces; i++ {
-						line += " "
-					}
-					line += item.Subscription + "\t" + item.Name
-					if ok {
-						line += "\t" + state
-					}
-					info(s.term, line)
-				}
-			case rosterEditCommand:
-				if s.pendingRosterEdit != nil {
-					warn(s.term, "Aborting previous roster edit")
-					s.pendingRosterEdit = nil
-				}
-				rosterCopy := make([]xmpp.RosterEntry, len(s.roster))
-				copy(rosterCopy, s.roster)
-				go s.editRoster(rosterCopy)
-			case rosterEditDoneCommand:
-				if s.pendingRosterEdit == nil {
-					warn(s.term, "No roster edit in progress. Use /rosteredit to start one")
-					continue
-				}
-				go s.loadEditedRoster(*s.pendingRosterEdit)
-			case toggleStatusUpdatesCommand:
-				s.config.HideStatusUpdates = !s.config.HideStatusUpdates
-				s.config.Save()
-				// Tell the user the current state of the statuses
-				if s.config.HideStatusUpdates {
-					info(s.term, "Status updates disabled")
-				} else {
-					info(s.term, "Status updates enabled")
-				}
-			case confirmCommand:
-				s.handleConfirmOrDeny(cmd.User, true /* confirm */)
-			case denyCommand:
-				s.handleConfirmOrDeny(cmd.User, false /* deny */)
-			case addCommand:
-				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
-			case msgCommand:
-				conversation, ok := s.conversations[cmd.to]
-				isEncrypted := ok && conversation.IsEncrypted()
-				if cmd.setPromptIsEncrypted != nil {
-					cmd.setPromptIsEncrypted <- isEncrypted
-				}
-				if !isEncrypted && config.ShouldEncryptTo(cmd.to) {
-					warn(s.term, fmt.Sprintf("Did not send: no encryption established with %s", cmd.to))
-					continue
-				}
-				var msgs [][]byte
-				message := []byte(cmd.msg)
-				// Automatically tag all outgoing plaintext
-				// messages with a whitespace tag that
-				// indicates that we support OTR.
-				if config.OTRAutoAppendTag &&
-					!bytes.Contains(message, []byte("?OTR")) &&
-					(!ok || !conversation.IsEncrypted()) {
-					message = append(message, OTRWhitespaceTag...)
-				}
-				if ok {
-					var err error
-					msgs, err = conversation.Send(message)
-					if err != nil {
-						alert(s.term, err.Error())
+					s.input.SetPromptForTarget(cmd.User, false)
+					warn(s.term, "OTR conversation ended with "+cmd.User)
+				case authQACommand:
+					to := string(cmd.User)
+					conversation, ok := s.conversations[to]
+					if !ok {
+						alert(s.term, "Can't authenticate without a secure conversation established")
 						break
 					}
-				} else {
-					msgs = [][]byte{[]byte(message)}
-				}
-				for _, message := range msgs {
-					s.conn.Send(cmd.to, string(message))
-				}
-			case otrCommand:
-				s.conn.Send(string(cmd.User), otr.QueryMessage)
-			case otrInfoCommand:
-				info(term, fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()))
-				for to, conversation := range s.conversations {
-					if conversation.IsEncrypted() {
-						info(s.term, fmt.Sprintf("Secure session with %s underway:", to))
-						printConversationInfo(&s, to, conversation)
+					msgs, err := conversation.Authenticate(cmd.Question, []byte(cmd.Secret))
+					if err != nil {
+						alert(s.term, "Error while starting authentication with "+to+": "+err.Error())
 					}
-				}
-			case endOTRCommand:
-				to := string(cmd.User)
-				conversation, ok := s.conversations[to]
-				if !ok {
-					alert(s.term, "No secure session established")
-					break
-				}
-				msgs := conversation.End()
-				for _, msg := range msgs {
-					s.conn.Send(to, string(msg))
-				}
-				s.input.SetPromptForTarget(cmd.User, false)
-				warn(s.term, "OTR conversation ended with "+cmd.User)
-			case authQACommand:
-				to := string(cmd.User)
-				conversation, ok := s.conversations[to]
-				if !ok {
-					alert(s.term, "Can't authenticate without a secure conversation established")
-					break
-				}
-				msgs, err := conversation.Authenticate(cmd.Question, []byte(cmd.Secret))
-				if err != nil {
-					alert(s.term, "Error while starting authentication with "+to+": "+err.Error())
-				}
-				for _, msg := range msgs {
-					s.conn.Send(to, string(msg))
-				}
-			case authOobCommand:
-				fpr, err := hex.DecodeString(cmd.Fingerprint)
-				if err != nil {
-					alert(s.term, fmt.Sprintf("Invalid fingerprint %s - not authenticated", cmd.Fingerprint))
-					break
-				}
-				existing := s.config.UserIdForFingerprint(fpr)
-				if len(existing) != 0 {
-					alert(s.term, fmt.Sprintf("Fingerprint %s already belongs to %s", cmd.Fingerprint, existing))
-					break
-				}
-				s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: cmd.User})
-				s.config.Save()
-				info(s.term, fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User))
-			case awayCommand:
-				s.conn.SignalPresence("away")
-			case chatCommand:
-				s.conn.SignalPresence("chat")
-			case dndCommand:
-				s.conn.SignalPresence("dnd")
-			case xaCommand:
-				s.conn.SignalPresence("xa")
-			case onlineCommand:
-				s.conn.SignalPresence("")
-			}
-		case rawStanza, ok := <-stanzaChan:
-			if !ok {
-				warn(term, "Exiting because channel to server closed")
-				break MainLoop
-			}
-			switch stanza := rawStanza.Value.(type) {
-			case *xmpp.ClientMessage:
-				s.processClientMessage(stanza)
-			case *xmpp.ClientPresence:
-				s.processPresence(stanza)
-			case *xmpp.ClientIQ:
-				if stanza.Type != "get" && stanza.Type != "set" {
-					continue
-				}
-				reply := s.processIQ(stanza)
-				if reply == nil {
-					reply = xmpp.ErrorReply{
-						Type:  "cancel",
-						Error: xmpp.ErrorBadRequest{},
+					for _, msg := range msgs {
+						s.conn.Send(to, string(msg))
 					}
+				case authOobCommand:
+					fpr, err := hex.DecodeString(cmd.Fingerprint)
+					if err != nil {
+						alert(s.term, fmt.Sprintf("Invalid fingerprint %s - not authenticated", cmd.Fingerprint))
+						break
+					}
+					existing := s.config.UserIdForFingerprint(fpr)
+					if len(existing) != 0 {
+						alert(s.term, fmt.Sprintf("Fingerprint %s already belongs to %s", cmd.Fingerprint, existing))
+						break
+					}
+					s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: cmd.User})
+					s.config.Save()
+					info(s.term, fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User))
+				case awayCommand:
+					s.conn.SignalPresence("away")
+				case chatCommand:
+					s.conn.SignalPresence("chat")
+				case dndCommand:
+					s.conn.SignalPresence("dnd")
+				case xaCommand:
+					s.conn.SignalPresence("xa")
+				case onlineCommand:
+					s.conn.SignalPresence("")
 				}
-				if err := s.conn.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
-					alert(term, "Failed to send IQ message: "+err.Error())
+			case rawStanza, ok := <-stanzaChan:
+				if !ok {
+					warn(term, "Exiting because channel to server closed")
+					break MainLoop
 				}
-			case *xmpp.StreamError:
-				var text string
-				if len(stanza.Text) > 0 {
-					text = stanza.Text
-				} else {
-					text = fmt.Sprintf("%s", stanza.Any)
+				switch stanza := rawStanza.Value.(type) {
+
+				// This case is an incoming IM
+				case *xmpp.ClientMessage:
+					s.processClientMessage(stanza)
+
+				case *xmpp.ClientPresence:
+					s.processPresence(stanza)
+
+				case *xmpp.ClientIQ:
+					if stanza.Type != "get" && stanza.Type != "set" {
+						continue
+					}
+					reply := s.processIQ(stanza)
+					if reply == nil {
+						reply = xmpp.ErrorReply{
+							Type:  "cancel",
+							Error: xmpp.ErrorBadRequest{},
+						}
+					}
+					if err := s.conn.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
+						alert(term, "Failed to send IQ message: "+err.Error())
+					}
+				case *xmpp.StreamError:
+					var text string
+					if len(stanza.Text) > 0 {
+						text = stanza.Text
+					} else {
+						text = fmt.Sprintf("%s", stanza.Any)
+					}
+					alert(term, "Exiting in response to fatal error from server: "+text)
+					break MainLoop
+
+				default:
+					info(term, fmt.Sprintf("%s %s", rawStanza.Name, rawStanza.Value))
 				}
-				alert(term, "Exiting in response to fatal error from server: "+text)
-				break MainLoop
-			default:
-				info(term, fmt.Sprintf("%s %s", rawStanza.Name, rawStanza.Value))
 			}
 		}
+
+		//
+		// GUI version of MainLoop (a Go-routine)
+		//
+
+	} else {
+		go func() {
+			for {
+				select {
+				case now := <-ticker.C:
+					haveExpired := false
+					for _, expiry := range s.timeouts {
+						if now.After(expiry) {
+							haveExpired = true
+							break
+						}
+					}
+					if !haveExpired {
+						continue
+					}
+
+					newTimeouts := make(map[xmpp.Cookie]time.Time)
+					for cookie, expiry := range s.timeouts {
+						if now.After(expiry) {
+							s.conn.Cancel(cookie)
+						} else {
+							newTimeouts[cookie] = expiry
+						}
+					}
+					s.timeouts = newTimeouts
+
+				case edit := <-s.pendingRosterChan:
+					if !edit.isComplete {
+
+						g.display(INFO, statusTabView, "Please edit "+edit.fileName+" and run /rostereditdone when complete", nil)
+
+						s.pendingRosterEdit = edit
+						continue
+					}
+					if s.processEditedRoster(edit) {
+						s.pendingRosterEdit = nil
+					} else {
+						g.display(ALERT, statusTabView, "Please reedit file and run /rostereditdone again", nil)
+					}
+
+				case rosterStanza, ok := <-rosterReply:
+					if !ok {
+						g.display(ALERT, statusTabView, "Failed to read roster: "+err.Error(), nil)
+						return
+					}
+					if s.roster, err = xmpp.ParseRoster(rosterStanza); err != nil {
+						g.display(ALERT, statusTabView, "Failed to parse roster: "+err.Error(), nil)
+						return
+					}
+					for _, entry := range s.roster {
+						s.input.AddUser(entry.Jid)
+					}
+					g.display(INFO, statusTabView, "Roster received", nil)
+
+				// Here is where commands, including msgCommand, are directed.
+
+				case cmd, ok := <-commandChan:
+					if !ok {
+						g.display(WARN, statusTabView, "Exiting because command channel closed", nil)
+						break // MainLoop
+					}
+					s.lastActionTime = time.Now()
+					switch cmd := cmd.(type) {
+					case quitCommand:
+						for to, conversation := range s.conversations {
+							msgs := conversation.End()
+							for _, msg := range msgs {
+								s.conn.Send(to, string(msg))
+							}
+						}
+						break // MainLoop
+
+					case versionCommand:
+						replyChan, cookie, err := s.conn.SendIQ(cmd.User, "get", xmpp.VersionQuery{})
+						if err != nil {
+							g.display(ALERT, statusTabView, "Error sending version request: "+err.Error(), nil)
+							continue
+						}
+						s.timeouts[cookie] = time.Now().Add(5 * time.Second)
+						go s.awaitVersionReply(replyChan, cmd.User)
+
+					//
+					// rosterCommand picks up the /roster and /roster --online commands
+					// This command is disabled in the GUI version and the code is moved
+					// to the event-driven guiProcessPresence() method. To Do: Add a GUI
+					// toggle to choose --online or not.
+
+					//					case rosterCommand:
+
+					//						maxLen := 0
+					//						for _, item := range s.roster {
+					//							if maxLen < len(item.Jid) {
+					//								maxLen = len(item.Jid)
+					//							}
+					//						}
+					//						g.clear(s.contactsView) // clean up Contacts window before posting update
+
+					//						for _, item := range s.roster {
+					//							state, ok := s.knownStates[item.Jid]
+
+					//							line := ""
+					//							if ok {
+					//								line += "[*] "
+					//							} else if cmd.OnlineOnly {
+					//								continue
+					//							} else {
+					//								line += "[ ] "
+					//							}
+
+					//							line += item.Jid
+					//							numSpaces := 1 + (maxLen - len(item.Jid))
+					//							for i := 0; i < numSpaces; i++ {
+					//								line += " "
+					//							}
+					//							line += item.Subscription + "\t" + item.Name
+					//							if ok {
+					//								line += "\t" + state
+					//							}
+					//							g.display(ROSTER, s.contactsView, line, nil)
+					//						}
+
+					case rosterEditCommand:
+						if s.pendingRosterEdit != nil {
+							g.display(WARN, s.statusTabView, "Aborting previous roster edit", nil)
+							s.pendingRosterEdit = nil
+						}
+						rosterCopy := make([]xmpp.RosterEntry, len(s.roster))
+						copy(rosterCopy, s.roster)
+						go s.editRoster(rosterCopy)
+					case rosterEditDoneCommand:
+						if s.pendingRosterEdit == nil {
+							g.display(WARN, s.statusTabView, "No roster edit in progress. Use /rosteredit to start one", nil)
+							continue
+						}
+						go s.loadEditedRoster(*s.pendingRosterEdit)
+					case toggleStatusUpdatesCommand:
+						s.config.HideStatusUpdates = !s.config.HideStatusUpdates
+						s.config.Save()
+						// Tell the user the current state of the statuses
+						if s.config.HideStatusUpdates {
+							g.display(INFO, s.statusTabView, "Status updates disabled", nil)
+						} else {
+							g.display(INFO, s.statusTabView, "Status updates enabled", nil)
+						}
+					case confirmCommand:
+						s.handleConfirmOrDeny(cmd.User, true /* confirm */)
+					case denyCommand:
+						s.handleConfirmOrDeny(cmd.User, false /* deny */)
+					case addCommand:
+						s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
+
+					// OUTGOING MESSAGES
+
+					case msgCommand:
+						conversation, ok := s.conversations[cmd.to]
+						isEncrypted := ok && conversation.IsEncrypted()
+						if cmd.setPromptIsEncrypted != nil {
+							cmd.setPromptIsEncrypted <- isEncrypted
+						}
+						if !isEncrypted && config.ShouldEncryptTo(cmd.to) {
+							g.display(WARN, s.statusTabView, fmt.Sprintf("Did not send: no encryption established with %s", cmd.to), nil)
+							continue
+						}
+						var msgs [][]byte
+						message := []byte(cmd.msg)
+						// Automatically tag all outgoing plaintext
+						// messages with a whitespace tag that
+						// indicates that we support OTR.
+						if config.OTRAutoAppendTag &&
+							!bytes.Contains(message, []byte("?OTR")) &&
+							(!ok || !conversation.IsEncrypted()) {
+							message = append(message, OTRWhitespaceTag...)
+						}
+						if ok {
+							var err error
+							msgs, err = conversation.Send(message)
+							if err != nil {
+								break
+							}
+						} else {
+							msgs = [][]byte{[]byte(message)}
+						}
+						for _, message := range msgs {
+							s.conn.Send(cmd.to, string(message))
+						}
+
+					case otrCommand:
+						s.conn.Send(string(cmd.User), otr.QueryMessage)
+					case otrInfoCommand:
+						g.display(INFO, s.statusTabView, fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()), nil)
+						for to, conversation := range s.conversations {
+							if conversation.IsEncrypted() {
+								g.display(INFO, s.statusTabView, fmt.Sprintf("Secure session with %s underway:", to), nil)
+								printConversationInfo(&s, to, conversation)
+							}
+						}
+					case endOTRCommand:
+						to := string(cmd.User)
+						conversation, ok := s.conversations[to]
+						if !ok {
+							g.display(ALERT, s.statusTabView, "Error sending version request: "+err.Error(), nil)
+							break
+						}
+						msgs := conversation.End()
+						for _, msg := range msgs {
+							s.conn.Send(to, string(msg))
+						}
+						s.input.SetPromptForTarget(cmd.User, false)
+						g.display(WARN, s.statusTabView, "OTR conversation ended with "+cmd.User, nil)
+					case authQACommand:
+						to := string(cmd.User)
+						conversation, ok := s.conversations[to]
+						if !ok {
+							g.display(ALERT, s.statusTabView, "Can't authenticate without a secure conversation established", nil)
+							break
+						}
+						msgs, err := conversation.Authenticate(cmd.Question, []byte(cmd.Secret))
+						if err != nil {
+							g.display(ALERT, s.statusTabView, "Error while starting authentication with "+to+": "+err.Error(), nil)
+						}
+						for _, msg := range msgs {
+							s.conn.Send(to, string(msg))
+						}
+					case authOobCommand:
+						fpr, err := hex.DecodeString(cmd.Fingerprint)
+						if err != nil {
+							g.display(ALERT, s.statusTabView, fmt.Sprintf("Invalid fingerprint %s - not authenticated", cmd.Fingerprint), nil)
+							break
+						}
+						existing := s.config.UserIdForFingerprint(fpr)
+						if len(existing) != 0 {
+							g.display(ALERT, s.statusTabView, fmt.Sprintf("Fingerprint %s already belongs to %s", cmd.Fingerprint, existing), nil)
+							break
+						}
+						s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: cmd.User})
+						s.config.Save()
+						g.display(INFO, s.statusTabView, fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User), nil)
+					case awayCommand:
+						s.conn.SignalPresence("away")
+					case chatCommand:
+						s.conn.SignalPresence("chat")
+					case dndCommand:
+						s.conn.SignalPresence("dnd")
+					case xaCommand:
+						s.conn.SignalPresence("xa")
+					case onlineCommand:
+						s.conn.SignalPresence("")
+					}
+				case rawStanza, ok := <-stanzaChan:
+					if !ok {
+						g.display(WARN, statusTabView, "Exiting because channel to server closed", nil)
+						break // MainLoop
+					}
+					switch stanza := rawStanza.Value.(type) {
+
+					// This case is an incoming IM
+					case *xmpp.ClientMessage:
+						s.processClientMessage(stanza)
+
+					case *xmpp.ClientPresence:
+						s.guiProcessPresence(stanza)
+
+					case *xmpp.ClientIQ:
+						if stanza.Type != "get" && stanza.Type != "set" {
+							continue
+						}
+						reply := s.processIQ(stanza)
+						if reply == nil {
+							reply = xmpp.ErrorReply{
+								Type:  "cancel",
+								Error: xmpp.ErrorBadRequest{},
+							}
+						}
+						if err := s.conn.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
+							g.display(ALERT, statusTabView, "Failed to send IQ message: "+err.Error(), nil)
+						}
+					case *xmpp.StreamError:
+						var text string
+						if len(stanza.Text) > 0 {
+							text = stanza.Text
+						} else {
+							text = fmt.Sprintf("%s", stanza.Any)
+						}
+						g.display(ALERT, statusTabView, "Exiting in response to fatal error from server: "+text, nil)
+						break // MainLoop
+
+					default:
+						g.display(INFO, statusTabView, fmt.Sprintf("%s %s", rawStanza.Name, rawStanza.Value), nil)
+					}
+				}
+			}
+		}() // end of go-routinized MainLoop
 	}
 
-	os.Stdout.Write([]byte("\n"))
-}
+	if guiMode == 1 {
+		gtk.Main()
+	} else {
+		os.Stdout.Write([]byte("\n"))
+	}
+} // end of main()
 
 func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 	buf := bytes.NewBuffer(stanza.Query)
@@ -719,11 +1179,25 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 		}
 	case "jabber:iq:roster query":
 		if len(stanza.From) > 0 && stanza.From != s.account {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(WARN, s.statusTabView, "Ignoring roster IQ from bad address: "+stanza.From, nil)
+			}
+			// -GUI
+
 			warn(s.term, "Ignoring roster IQ from bad address: "+stanza.From)
 			return nil
 		}
 		var roster xmpp.Roster
 		if err := xml.NewDecoder(bytes.NewBuffer(stanza.Query)).Decode(&roster); err != nil || len(roster.Item) == 0 {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(WARN, s.statusTabView, "Failed to parse roster push IQ", nil)
+			}
+			// -GUI
+
 			warn(s.term, "Failed to parse roster push IQ")
 			return nil
 		}
@@ -753,6 +1227,13 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 		}
 		return xmpp.EmptyReply{}
 	default:
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, "Unknown IQ: "+startElem.Name.Space+" "+startElem.Name.Local, nil)
+		}
+		// -GUI
+
 		info(s.term, "Unknown IQ: "+startElem.Name.Space+" "+startElem.Name.Local)
 	}
 
@@ -762,6 +1243,13 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
 	id, ok := s.pendingSubscribes[jid]
 	if !ok {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(WARN, s.statusTabView, "No pending subscription from "+jid, nil)
+		}
+		// -GUI
+
 		warn(s.term, "No pending subscription from "+jid)
 		return
 	}
@@ -771,6 +1259,13 @@ func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
 		typ = "subscribed"
 	}
 	if err := s.conn.SendPresence(jid, typ, id); err != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, s.statusTabView, "Error sending presence stanza: "+err.Error(), nil)
+		}
+		// -GUI
+
 		alert(s.term, "Error sending presence stanza: "+err.Error())
 	}
 }
@@ -779,6 +1274,13 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	from := xmpp.RemoveResourceFromJid(stanza.From)
 
 	if stanza.Type == "error" {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, s.statusTabView, "Error reported from "+from+": "+stanza.Body, nil)
+		}
+		// -GUI
+
 		alert(s.term, "Error reported from "+from+": "+stanza.Body)
 		return
 	}
@@ -792,17 +1294,32 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 	out, encrypted, change, toSend, err := conversation.Receive([]byte(stanza.Body))
 	if err != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, s.statusTabView, "While processing message from "+from+": "+err.Error(), nil)
+		}
+		// -GUI
+
 		alert(s.term, "While processing message from "+from+": "+err.Error())
 		s.conn.Send(stanza.From, otr.ErrorPrefix+"Error processing message")
 	}
 	for _, msg := range toSend {
 		s.conn.Send(stanza.From, string(msg))
 	}
+
 	switch change {
 	case otr.NewKeys:
 		s.input.SetPromptForTarget(from, true)
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, fmt.Sprintf("New OTR session with %s established", from), nil)
+		}
+		// -GUI
+
 		info(s.term, fmt.Sprintf("New OTR session with %s established", from))
-		printConversationInfo(s, from, conversation)
+		printConversationInfo(s, from, conversation) // key sig and validation status
 	case otr.ConversationEnded:
 		s.input.SetPromptForTarget(from, false)
 		// This is probably unsafe without a policy that _forces_ crypto to
@@ -812,25 +1329,74 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		// feature and have set it as an explicit preference.
 		if s.config.OTRAutoTearDown {
 			if s.conversations[from] == nil {
+
+				// +GUI
+				if guiMode == 1 {
+					g.display(ALERT, s.statusTabView, fmt.Sprintf("No secure session established; unable to automatically tear down OTR conversation with %s.", from), nil)
+				}
+				// -GUI
+
 				alert(s.term, fmt.Sprintf("No secure session established; unable to automatically tear down OTR conversation with %s.", from))
 				break
 			} else {
+
+				// +GUI
+				if guiMode == 1 {
+					g.display(INFO, s.statusTabView, fmt.Sprintf("%s has ended the secure conversation.", from), nil)
+				}
+				// -GUI
+
 				info(s.term, fmt.Sprintf("%s has ended the secure conversation.", from))
 				msgs := conversation.End()
 				for _, msg := range msgs {
 					s.conn.Send(from, string(msg))
 				}
+
+				// +GUI
+				if guiMode == 1 {
+					g.display(INFO, s.statusTabView, fmt.Sprintf("Secure session with %s has been automatically ended. Messages will be sent in the clear until another OTR session is established.", from), nil)
+				}
+				// -GUI
+
 				info(s.term, fmt.Sprintf("Secure session with %s has been automatically ended. Messages will be sent in the clear until another OTR session is established.", from))
 			}
 		} else {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(INFO, s.statusTabView, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from), nil)
+			}
+			// -GUI
+
 			info(s.term, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
 		}
 	case otr.SMPSecretNeeded:
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from), nil)
+		}
+		// -GUI
+
 		info(s.term, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from))
 		if question := conversation.SMPQuestion(); len(question) > 0 {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(INFO, s.statusTabView, fmt.Sprintf("%s asks: %s", from, question), nil)
+			}
+			// -GUI
+
 			info(s.term, fmt.Sprintf("%s asks: %s", from, question))
 		}
 	case otr.SMPComplete:
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, fmt.Sprintf("Authentication with %s successful", from), nil)
+		}
+		// -GUI
+
 		info(s.term, fmt.Sprintf("Authentication with %s successful", from))
 		fpr := conversation.TheirPublicKey.Fingerprint()
 		if len(s.config.UserIdForFingerprint(fpr)) == 0 {
@@ -838,6 +1404,13 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		}
 		s.config.Save()
 	case otr.SMPFailed:
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, s.statusTabView, fmt.Sprintf("Authentication with %s failed", from), nil)
+		}
+		// -GUI
+
 		alert(s.term, fmt.Sprintf("Authentication with %s failed", from))
 	}
 
@@ -853,6 +1426,13 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		whitespaceTag := out[len(out)-whitespaceTagLength:]
 		if bytes.Equal(whitespaceTag[:len(OTRWhitespaceTagStart)], OTRWhitespaceTagStart) {
 			if bytes.HasSuffix(whitespaceTag, OTRWhiteSpaceTagV1) {
+
+				// +GUI
+				if guiMode == 1 {
+					g.display(INFO, s.statusTabView, fmt.Sprintf("%s appears to support OTRv1. You should encourage them to upgrade their OTR client!", from), nil)
+				}
+				// -GUI
+
 				info(s.term, fmt.Sprintf("%s appears to support OTRv1. You should encourage them to upgrade their OTR client!", from))
 				detectedOTRVersion = 1
 			}
@@ -866,17 +1446,34 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	}
 
 	if s.config.OTRAutoStartSession && detectedOTRVersion >= 2 {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, fmt.Sprintf("%s appears to support OTRv%d. We are attempting to start an OTR session with them.", from, detectedOTRVersion), nil)
+		}
+		// -GUI
+
 		info(s.term, fmt.Sprintf("%s appears to support OTRv%d. We are attempting to start an OTR session with them.", from, detectedOTRVersion))
 		s.conn.Send(from, otr.QueryMessage)
 	} else if s.config.OTRAutoStartSession && detectedOTRVersion == 1 {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, fmt.Sprintf("%s appears to support OTRv%d. You should encourage them to upgrade their OTR client!", from, detectedOTRVersion), nil)
+		}
+		// -GUI
+
 		info(s.term, fmt.Sprintf("%s appears to support OTRv%d. You should encourage them to upgrade their OTR client!", from, detectedOTRVersion))
 	}
 
 	var line []byte
-	if encrypted {
-		line = append(line, s.term.Escape.Green...)
-	} else {
-		line = append(line, s.term.Escape.Red...)
+
+	if guiMode == 0 {
+		if encrypted {
+			line = append(line, s.term.Escape.Green...) // removed for GUI
+		} else {
+			line = append(line, s.term.Escape.Red...)
+		}
 	}
 
 	var timestamp string
@@ -888,6 +1485,13 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 		// sent, rather than time.Now().
 		messageTime, err = time.Parse(time.RFC3339, stanza.Delay.Stamp)
 		if err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, s.statusTabView, fmt.Sprintf("Can not parse Delayed Delivery timestamp, using quoted string instead."), nil)
+			}
+			// -GUI
+
 			alert(s.term, "Can not parse Delayed Delivery timestamp, using quoted string instead.")
 			timestamp = fmt.Sprintf("%q", stanza.Delay.Stamp)
 		}
@@ -900,12 +1504,30 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 	t := fmt.Sprintf("(%s) %s: ", timestamp, from)
 	line = append(line, []byte(t)...)
-	line = append(line, s.term.Escape.Reset...)
-	line = appendTerminalEscaped(line, stripHTML(out))
-	line = append(line, '\n')
-	if s.config.Bell {
-		line = append(line, '\a')
+
+	if guiMode == 0 {
+		line = append(line, s.term.Escape.Reset...) // removed for GUI
 	}
+
+	line = appendTerminalEscaped(line, stripHTML(out))
+	line = append(line, '\n') // inserts a blank line after incoming message
+
+	if guiMode == 0 {
+		if s.config.Bell {
+			line = append(line, '\a')
+		}
+	}
+
+	//
+	// Here is the GUI output for incoming messages.
+	//
+
+	// +GUI
+	if guiMode == 1 {
+		g.display(MSG_INCOMING, s.convoTabView, string(line), nil)
+	}
+	// -GUI
+
 	s.term.Write(line)
 	s.maybeNotify()
 }
@@ -929,6 +1551,13 @@ func (s *Session) maybeNotify() {
 	cmd := exec.Command(s.config.NotifyCommand[0], s.config.NotifyCommand[1:]...)
 	go func() {
 		if err := cmd.Run(); err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(INFO, s.statusTabView, "Failed to run notify command: "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(s.term, "Failed to run notify command: "+err.Error())
 		}
 	}()
@@ -1000,6 +1629,7 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 		line = append(line, ' ')
 		line = append(line, []byte(stanza.Status)...)
 		line = append(line, '\n')
+
 		s.term.Write(line)
 	}
 }
@@ -1007,19 +1637,47 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 	stanza, ok := <-ch
 	if !ok {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(WARN, s.statusTabView, "Version request to "+user+" timed out", nil)
+		}
+		// -GUI
+
 		warn(s.term, "Version request to "+user+" timed out")
 		return
 	}
 	reply, ok := stanza.Value.(*xmpp.ClientIQ)
 	if !ok {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(WARN, s.statusTabView, "Version request to "+user+" resulted in bad reply type", nil)
+		}
+		// -GUI
+
 		warn(s.term, "Version request to "+user+" resulted in bad reply type")
 		return
 	}
 
 	if reply.Type == "error" {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(WARN, s.statusTabView, "Version request to "+user+" resulted in XMPP error", nil)
+		}
+		// -GUI
+
 		warn(s.term, "Version request to "+user+" resulted in XMPP error")
 		return
 	} else if reply.Type != "result" {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(WARN, s.statusTabView, "Version request to "+user+" resulted in response with unknown type: "+reply.Type, nil)
+		}
+		// -GUI
+
 		warn(s.term, "Version request to "+user+" resulted in response with unknown type: "+reply.Type)
 		return
 	}
@@ -1027,9 +1685,22 @@ func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 	buf := bytes.NewBuffer(reply.Query)
 	var versionReply xmpp.VersionReply
 	if err := xml.NewDecoder(buf).Decode(&versionReply); err != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(WARN, s.statusTabView, "Failed to parse version reply from "+user+": "+err.Error(), nil)
+		}
+		// -GUI
+
 		warn(s.term, "Failed to parse version reply from "+user+": "+err.Error())
 		return
 	}
+
+	// +GUI
+	if guiMode == 1 {
+		g.display(INFO, s.statusTabView, fmt.Sprintf("Version reply from %s: %#v", user, versionReply), nil)
+	}
+	// -GUI
 
 	info(s.term, fmt.Sprintf("Version reply from %s: %#v", user, versionReply))
 }
@@ -1041,6 +1712,13 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 	// directory.
 	dir, err := ioutil.TempDir("" /* system default temp dir */, "xmpp-client")
 	if err != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, s.statusTabView, "Failed to create temp dir to edit roster: "+err.Error(), nil)
+		}
+		// -GUI
+
 		alert(s.term, "Failed to create temp dir to edit roster: "+err.Error())
 		return
 	}
@@ -1053,6 +1731,13 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 	fileName := filepath.Join(dir, "roster")
 	f, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, s.statusTabView, "Failed to create temp file: "+err.Error(), nil)
+		}
+		// -GUI
+
 		alert(s.term, "Failed to create temp file: "+err.Error())
 		return
 	}
@@ -1185,6 +1870,13 @@ func unescapeNonASCII(in string) (string, error) {
 func (s *Session) loadEditedRoster(edit rosterEdit) {
 	contents, err := ioutil.ReadFile(edit.fileName)
 	if err != nil {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, s.statusTabView, "Failed to load edited roster: "+err.Error(), nil)
+		}
+		// -GUI
+
 		alert(s.term, "Failed to load edited roster: "+err.Error())
 		return
 	}
@@ -1212,6 +1904,13 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 		var err error
 
 		if entry.Jid, err = unescapeNonASCII(string(string(parts[0]))); err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, s.statusTabView, fmt.Sprintf("Failed to parse JID on line %d: %s", i+1, err), nil)
+			}
+			// -GUI
+
 			alert(s.term, fmt.Sprintf("Failed to parse JID on line %d: %s", i+1, err))
 			return false
 		}
@@ -1222,6 +1921,13 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 
 			pos := bytes.IndexByte(part, ':')
 			if pos == -1 {
+
+				// +GUI
+				if guiMode == 1 {
+					g.display(ALERT, s.statusTabView, fmt.Sprintf("Failed to find colon in item on line %d", i+1), nil)
+				}
+				// -GUI
+
 				alert(s.term, fmt.Sprintf("Failed to find colon in item on line %d", i+1))
 				return false
 			}
@@ -1229,6 +1935,13 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 			typ := string(part[:pos])
 			value, err := unescapeNonASCII(string(part[pos+1:]))
 			if err != nil {
+
+				// +GUI
+				if guiMode == 1 {
+					g.display(ALERT, s.statusTabView, fmt.Sprintf("Failed to unescape item on line %d: %s", i+1, err), nil)
+				}
+				// -GUI
+
 				alert(s.term, fmt.Sprintf("Failed to unescape item on line %d: %s", i+1, err))
 				return false
 			}
@@ -1236,6 +1949,13 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 			switch typ {
 			case "name":
 				if len(entry.Name) > 0 {
+
+					// +GUI
+					if guiMode == 1 {
+						g.display(ALERT, s.statusTabView, fmt.Sprintf("Multiple names given for contact on line %d", i+1), nil)
+					}
+					// -GUI
+
 					alert(s.term, fmt.Sprintf("Multiple names given for contact on line %d", i+1))
 					return false
 				}
@@ -1245,6 +1965,13 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 					entry.Group = append(entry.Group, value)
 				}
 			default:
+
+				// +GUI
+				if guiMode == 1 {
+					g.display(ALERT, s.statusTabView, fmt.Sprintf("Unknown item tag '%s' on line %d", typ, i+1), nil)
+				}
+				// -GUI
+
 				alert(s.term, fmt.Sprintf("Unknown item tag '%s' on line %d", typ, i+1))
 				return false
 			}
@@ -1280,6 +2007,13 @@ NextAdd:
 	}
 
 	for _, jid := range toDelete {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, "Deleting roster entry for "+jid, nil)
+		}
+		// -GUI
+
 		info(s.term, "Deleting roster entry for "+jid)
 		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
 			Item: xmpp.RosterRequestItem{
@@ -1288,6 +2022,13 @@ NextAdd:
 			},
 		})
 		if err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, s.statusTabView, "Failed to remove roster entry: "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(s.term, "Failed to remove roster entry: "+err.Error())
 		}
 
@@ -1304,6 +2045,13 @@ NextAdd:
 	}
 
 	for _, entry := range toEdit {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, "Updating roster entry for "+entry.Jid, nil)
+		}
+		// -GUI
+
 		info(s.term, "Updating roster entry for "+entry.Jid)
 		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
 			Item: xmpp.RosterRequestItem{
@@ -1313,11 +2061,25 @@ NextAdd:
 			},
 		})
 		if err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, s.statusTabView, "Failed to update roster entry: "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(s.term, "Failed to update roster entry: "+err.Error())
 		}
 	}
 
 	for _, entry := range toAdd {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, "Adding roster entry for "+entry.Jid, nil)
+		}
+		// -GUI
+
 		info(s.term, "Adding roster entry for "+entry.Jid)
 		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
 			Item: xmpp.RosterRequestItem{
@@ -1327,6 +2089,13 @@ NextAdd:
 			},
 		})
 		if err != nil {
+
+			// +GUI
+			if guiMode == 1 {
+				g.display(ALERT, s.statusTabView, "Failed to add roster entry: "+err.Error(), nil)
+			}
+			// -GUI
+
 			alert(s.term, "Failed to add roster entry: "+err.Error())
 		}
 	}
@@ -1410,6 +2179,10 @@ type lineLogger struct {
 func (l *lineLogger) logLines(in []byte) []byte {
 	for len(in) > 0 {
 		if newLine := bytes.IndexByte(in, '\n'); newLine >= 0 {
+
+			// +GUI -- DOESN'T WORK
+			// -GUI
+
 			info(l.term, string(in[:newLine]))
 			in = in[newLine+1:]
 		} else {
@@ -1437,18 +2210,62 @@ func (l *lineLogger) Write(data []byte) (int, error) {
 func printConversationInfo(s *Session, uid string, conversation *otr.Conversation) {
 	fpr := conversation.TheirPublicKey.Fingerprint()
 	fprUid := s.config.UserIdForFingerprint(fpr)
+
+	// +GUI
+	if guiMode == 1 {
+		g.display(INFO, s.statusTabView, fmt.Sprintf("  Fingerprint  for %s: %x", uid, fpr), nil)
+	}
+	// -GUI
+
 	info(s.term, fmt.Sprintf("  Fingerprint  for %s: %x", uid, fpr))
+
+	// +GUI
+	if guiMode == 1 {
+		g.display(INFO, s.statusTabView, fmt.Sprintf("  Session  ID  for %s: %x", uid, conversation.SSID), nil)
+	}
+	// -GUI
+
 	info(s.term, fmt.Sprintf("  Session  ID  for %s: %x", uid, conversation.SSID))
 	if fprUid == uid {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(INFO, s.statusTabView, fmt.Sprintf("  Identity key for %s is verified", uid), nil)
+		}
+		// -GUI
+
 		info(s.term, fmt.Sprintf("  Identity key for %s is verified", uid))
 	} else if len(fprUid) > 1 {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, s.statusTabView, fmt.Sprintf("  Warning: %s is using an identity key which was verified for %s", uid, fprUid), nil)
+		}
+		// -GUI
+
 		alert(s.term, fmt.Sprintf("  Warning: %s is using an identity key which was verified for %s", uid, fprUid))
 	} else if s.config.HasFingerprint(uid) {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(CRITICAL, s.statusTabView, fmt.Sprintf("  Identity key for %s is incorrect", uid), nil)
+		}
+		// -GUI
+
 		critical(s.term, fmt.Sprintf("  Identity key for %s is incorrect", uid))
 	} else {
+
+		// +GUI
+		if guiMode == 1 {
+			g.display(ALERT, s.statusTabView, fmt.Sprintf("  Identity key for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", uid), nil)
+		}
+		// -GUI
+
 		alert(s.term, fmt.Sprintf("  Identity key for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", uid))
 	}
 }
+
+// INTERACTIVE FORM
 
 // promptForForm runs an XEP-0004 form and collects responses from the user.
 func promptForForm(term *terminal.Terminal, user, password, title, instructions string, fields []interface{}) error {
@@ -1459,7 +2276,6 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 	formStringForPrinting := func(s string) string {
 		var line []byte
 
-		line = append(line, term.Escape.Red...)
 		line = appendTerminalEscaped(line, []byte(s))
 		line = append(line, term.Escape.Reset...)
 		return string(line)
@@ -1703,164 +2519,4 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 	}
 
 	return nil
-}
-
-// caCertRootDER is the DER-format, root certificate for CACert. Downloaded
-// from http://www.cacert.org/certs/root.der.
-var caCertRootDER = []byte{
-	0x30, 0x82, 0x07, 0x3d, 0x30, 0x82, 0x05, 0x25, 0xa0, 0x03, 0x02, 0x01,
-	0x02, 0x02, 0x01, 0x00, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
-	0xf7, 0x0d, 0x01, 0x01, 0x04, 0x05, 0x00, 0x30, 0x79, 0x31, 0x10, 0x30,
-	0x0e, 0x06, 0x03, 0x55, 0x04, 0x0a, 0x13, 0x07, 0x52, 0x6f, 0x6f, 0x74,
-	0x20, 0x43, 0x41, 0x31, 0x1e, 0x30, 0x1c, 0x06, 0x03, 0x55, 0x04, 0x0b,
-	0x13, 0x15, 0x68, 0x74, 0x74, 0x70, 0x3a, 0x2f, 0x2f, 0x77, 0x77, 0x77,
-	0x2e, 0x63, 0x61, 0x63, 0x65, 0x72, 0x74, 0x2e, 0x6f, 0x72, 0x67, 0x31,
-	0x22, 0x30, 0x20, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x19, 0x43, 0x41,
-	0x20, 0x43, 0x65, 0x72, 0x74, 0x20, 0x53, 0x69, 0x67, 0x6e, 0x69, 0x6e,
-	0x67, 0x20, 0x41, 0x75, 0x74, 0x68, 0x6f, 0x72, 0x69, 0x74, 0x79, 0x31,
-	0x21, 0x30, 0x1f, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
-	0x09, 0x01, 0x16, 0x12, 0x73, 0x75, 0x70, 0x70, 0x6f, 0x72, 0x74, 0x40,
-	0x63, 0x61, 0x63, 0x65, 0x72, 0x74, 0x2e, 0x6f, 0x72, 0x67, 0x30, 0x1e,
-	0x17, 0x0d, 0x30, 0x33, 0x30, 0x33, 0x33, 0x30, 0x31, 0x32, 0x32, 0x39,
-	0x34, 0x39, 0x5a, 0x17, 0x0d, 0x33, 0x33, 0x30, 0x33, 0x32, 0x39, 0x31,
-	0x32, 0x32, 0x39, 0x34, 0x39, 0x5a, 0x30, 0x79, 0x31, 0x10, 0x30, 0x0e,
-	0x06, 0x03, 0x55, 0x04, 0x0a, 0x13, 0x07, 0x52, 0x6f, 0x6f, 0x74, 0x20,
-	0x43, 0x41, 0x31, 0x1e, 0x30, 0x1c, 0x06, 0x03, 0x55, 0x04, 0x0b, 0x13,
-	0x15, 0x68, 0x74, 0x74, 0x70, 0x3a, 0x2f, 0x2f, 0x77, 0x77, 0x77, 0x2e,
-	0x63, 0x61, 0x63, 0x65, 0x72, 0x74, 0x2e, 0x6f, 0x72, 0x67, 0x31, 0x22,
-	0x30, 0x20, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, 0x19, 0x43, 0x41, 0x20,
-	0x43, 0x65, 0x72, 0x74, 0x20, 0x53, 0x69, 0x67, 0x6e, 0x69, 0x6e, 0x67,
-	0x20, 0x41, 0x75, 0x74, 0x68, 0x6f, 0x72, 0x69, 0x74, 0x79, 0x31, 0x21,
-	0x30, 0x1f, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x09,
-	0x01, 0x16, 0x12, 0x73, 0x75, 0x70, 0x70, 0x6f, 0x72, 0x74, 0x40, 0x63,
-	0x61, 0x63, 0x65, 0x72, 0x74, 0x2e, 0x6f, 0x72, 0x67, 0x30, 0x82, 0x02,
-	0x22, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
-	0x01, 0x01, 0x05, 0x00, 0x03, 0x82, 0x02, 0x0f, 0x00, 0x30, 0x82, 0x02,
-	0x0a, 0x02, 0x82, 0x02, 0x01, 0x00, 0xce, 0x22, 0xc0, 0xe2, 0x46, 0x7d,
-	0xec, 0x36, 0x28, 0x07, 0x50, 0x96, 0xf2, 0xa0, 0x33, 0x40, 0x8c, 0x4b,
-	0xf1, 0x3b, 0x66, 0x3f, 0x31, 0xe5, 0x6b, 0x02, 0x36, 0xdb, 0xd6, 0x7c,
-	0xf6, 0xf1, 0x88, 0x8f, 0x4e, 0x77, 0x36, 0x05, 0x41, 0x95, 0xf9, 0x09,
-	0xf0, 0x12, 0xcf, 0x46, 0x86, 0x73, 0x60, 0xb7, 0x6e, 0x7e, 0xe8, 0xc0,
-	0x58, 0x64, 0xae, 0xcd, 0xb0, 0xad, 0x45, 0x17, 0x0c, 0x63, 0xfa, 0x67,
-	0x0a, 0xe8, 0xd6, 0xd2, 0xbf, 0x3e, 0xe7, 0x98, 0xc4, 0xf0, 0x4c, 0xfa,
-	0xe0, 0x03, 0xbb, 0x35, 0x5d, 0x6c, 0x21, 0xde, 0x9e, 0x20, 0xd9, 0xba,
-	0xcd, 0x66, 0x32, 0x37, 0x72, 0xfa, 0xf7, 0x08, 0xf5, 0xc7, 0xcd, 0x58,
-	0xc9, 0x8e, 0xe7, 0x0e, 0x5e, 0xea, 0x3e, 0xfe, 0x1c, 0xa1, 0x14, 0x0a,
-	0x15, 0x6c, 0x86, 0x84, 0x5b, 0x64, 0x66, 0x2a, 0x7a, 0xa9, 0x4b, 0x53,
-	0x79, 0xf5, 0x88, 0xa2, 0x7b, 0xee, 0x2f, 0x0a, 0x61, 0x2b, 0x8d, 0xb2,
-	0x7e, 0x4d, 0x56, 0xa5, 0x13, 0xec, 0xea, 0xda, 0x92, 0x9e, 0xac, 0x44,
-	0x41, 0x1e, 0x58, 0x60, 0x65, 0x05, 0x66, 0xf8, 0xc0, 0x44, 0xbd, 0xcb,
-	0x94, 0xf7, 0x42, 0x7e, 0x0b, 0xf7, 0x65, 0x68, 0x98, 0x51, 0x05, 0xf0,
-	0xf3, 0x05, 0x91, 0x04, 0x1d, 0x1b, 0x17, 0x82, 0xec, 0xc8, 0x57, 0xbb,
-	0xc3, 0x6b, 0x7a, 0x88, 0xf1, 0xb0, 0x72, 0xcc, 0x25, 0x5b, 0x20, 0x91,
-	0xec, 0x16, 0x02, 0x12, 0x8f, 0x32, 0xe9, 0x17, 0x18, 0x48, 0xd0, 0xc7,
-	0x05, 0x2e, 0x02, 0x30, 0x42, 0xb8, 0x25, 0x9c, 0x05, 0x6b, 0x3f, 0xaa,
-	0x3a, 0xa7, 0xeb, 0x53, 0x48, 0xf7, 0xe8, 0xd2, 0xb6, 0x07, 0x98, 0xdc,
-	0x1b, 0xc6, 0x34, 0x7f, 0x7f, 0xc9, 0x1c, 0x82, 0x7a, 0x05, 0x58, 0x2b,
-	0x08, 0x5b, 0xf3, 0x38, 0xa2, 0xab, 0x17, 0x5d, 0x66, 0xc9, 0x98, 0xd7,
-	0x9e, 0x10, 0x8b, 0xa2, 0xd2, 0xdd, 0x74, 0x9a, 0xf7, 0x71, 0x0c, 0x72,
-	0x60, 0xdf, 0xcd, 0x6f, 0x98, 0x33, 0x9d, 0x96, 0x34, 0x76, 0x3e, 0x24,
-	0x7a, 0x92, 0xb0, 0x0e, 0x95, 0x1e, 0x6f, 0xe6, 0xa0, 0x45, 0x38, 0x47,
-	0xaa, 0xd7, 0x41, 0xed, 0x4a, 0xb7, 0x12, 0xf6, 0xd7, 0x1b, 0x83, 0x8a,
-	0x0f, 0x2e, 0xd8, 0x09, 0xb6, 0x59, 0xd7, 0xaa, 0x04, 0xff, 0xd2, 0x93,
-	0x7d, 0x68, 0x2e, 0xdd, 0x8b, 0x4b, 0xab, 0x58, 0xba, 0x2f, 0x8d, 0xea,
-	0x95, 0xa7, 0xa0, 0xc3, 0x54, 0x89, 0xa5, 0xfb, 0xdb, 0x8b, 0x51, 0x22,
-	0x9d, 0xb2, 0xc3, 0xbe, 0x11, 0xbe, 0x2c, 0x91, 0x86, 0x8b, 0x96, 0x78,
-	0xad, 0x20, 0xd3, 0x8a, 0x2f, 0x1a, 0x3f, 0xc6, 0xd0, 0x51, 0x65, 0x87,
-	0x21, 0xb1, 0x19, 0x01, 0x65, 0x7f, 0x45, 0x1c, 0x87, 0xf5, 0x7c, 0xd0,
-	0x41, 0x4c, 0x4f, 0x29, 0x98, 0x21, 0xfd, 0x33, 0x1f, 0x75, 0x0c, 0x04,
-	0x51, 0xfa, 0x19, 0x77, 0xdb, 0xd4, 0x14, 0x1c, 0xee, 0x81, 0xc3, 0x1d,
-	0xf5, 0x98, 0xb7, 0x69, 0x06, 0x91, 0x22, 0xdd, 0x00, 0x50, 0xcc, 0x81,
-	0x31, 0xac, 0x12, 0x07, 0x7b, 0x38, 0xda, 0x68, 0x5b, 0xe6, 0x2b, 0xd4,
-	0x7e, 0xc9, 0x5f, 0xad, 0xe8, 0xeb, 0x72, 0x4c, 0xf3, 0x01, 0xe5, 0x4b,
-	0x20, 0xbf, 0x9a, 0xa6, 0x57, 0xca, 0x91, 0x00, 0x01, 0x8b, 0xa1, 0x75,
-	0x21, 0x37, 0xb5, 0x63, 0x0d, 0x67, 0x3e, 0x46, 0x4f, 0x70, 0x20, 0x67,
-	0xce, 0xc5, 0xd6, 0x59, 0xdb, 0x02, 0xe0, 0xf0, 0xd2, 0xcb, 0xcd, 0xba,
-	0x62, 0xb7, 0x90, 0x41, 0xe8, 0xdd, 0x20, 0xe4, 0x29, 0xbc, 0x64, 0x29,
-	0x42, 0xc8, 0x22, 0xdc, 0x78, 0x9a, 0xff, 0x43, 0xec, 0x98, 0x1b, 0x09,
-	0x51, 0x4b, 0x5a, 0x5a, 0xc2, 0x71, 0xf1, 0xc4, 0xcb, 0x73, 0xa9, 0xe5,
-	0xa1, 0x0b, 0x02, 0x03, 0x01, 0x00, 0x01, 0xa3, 0x82, 0x01, 0xce, 0x30,
-	0x82, 0x01, 0xca, 0x30, 0x1d, 0x06, 0x03, 0x55, 0x1d, 0x0e, 0x04, 0x16,
-	0x04, 0x14, 0x16, 0xb5, 0x32, 0x1b, 0xd4, 0xc7, 0xf3, 0xe0, 0xe6, 0x8e,
-	0xf3, 0xbd, 0xd2, 0xb0, 0x3a, 0xee, 0xb2, 0x39, 0x18, 0xd1, 0x30, 0x81,
-	0xa3, 0x06, 0x03, 0x55, 0x1d, 0x23, 0x04, 0x81, 0x9b, 0x30, 0x81, 0x98,
-	0x80, 0x14, 0x16, 0xb5, 0x32, 0x1b, 0xd4, 0xc7, 0xf3, 0xe0, 0xe6, 0x8e,
-	0xf3, 0xbd, 0xd2, 0xb0, 0x3a, 0xee, 0xb2, 0x39, 0x18, 0xd1, 0xa1, 0x7d,
-	0xa4, 0x7b, 0x30, 0x79, 0x31, 0x10, 0x30, 0x0e, 0x06, 0x03, 0x55, 0x04,
-	0x0a, 0x13, 0x07, 0x52, 0x6f, 0x6f, 0x74, 0x20, 0x43, 0x41, 0x31, 0x1e,
-	0x30, 0x1c, 0x06, 0x03, 0x55, 0x04, 0x0b, 0x13, 0x15, 0x68, 0x74, 0x74,
-	0x70, 0x3a, 0x2f, 0x2f, 0x77, 0x77, 0x77, 0x2e, 0x63, 0x61, 0x63, 0x65,
-	0x72, 0x74, 0x2e, 0x6f, 0x72, 0x67, 0x31, 0x22, 0x30, 0x20, 0x06, 0x03,
-	0x55, 0x04, 0x03, 0x13, 0x19, 0x43, 0x41, 0x20, 0x43, 0x65, 0x72, 0x74,
-	0x20, 0x53, 0x69, 0x67, 0x6e, 0x69, 0x6e, 0x67, 0x20, 0x41, 0x75, 0x74,
-	0x68, 0x6f, 0x72, 0x69, 0x74, 0x79, 0x31, 0x21, 0x30, 0x1f, 0x06, 0x09,
-	0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x09, 0x01, 0x16, 0x12, 0x73,
-	0x75, 0x70, 0x70, 0x6f, 0x72, 0x74, 0x40, 0x63, 0x61, 0x63, 0x65, 0x72,
-	0x74, 0x2e, 0x6f, 0x72, 0x67, 0x82, 0x01, 0x00, 0x30, 0x0f, 0x06, 0x03,
-	0x55, 0x1d, 0x13, 0x01, 0x01, 0xff, 0x04, 0x05, 0x30, 0x03, 0x01, 0x01,
-	0xff, 0x30, 0x32, 0x06, 0x03, 0x55, 0x1d, 0x1f, 0x04, 0x2b, 0x30, 0x29,
-	0x30, 0x27, 0xa0, 0x25, 0xa0, 0x23, 0x86, 0x21, 0x68, 0x74, 0x74, 0x70,
-	0x73, 0x3a, 0x2f, 0x2f, 0x77, 0x77, 0x77, 0x2e, 0x63, 0x61, 0x63, 0x65,
-	0x72, 0x74, 0x2e, 0x6f, 0x72, 0x67, 0x2f, 0x72, 0x65, 0x76, 0x6f, 0x6b,
-	0x65, 0x2e, 0x63, 0x72, 0x6c, 0x30, 0x30, 0x06, 0x09, 0x60, 0x86, 0x48,
-	0x01, 0x86, 0xf8, 0x42, 0x01, 0x04, 0x04, 0x23, 0x16, 0x21, 0x68, 0x74,
-	0x74, 0x70, 0x73, 0x3a, 0x2f, 0x2f, 0x77, 0x77, 0x77, 0x2e, 0x63, 0x61,
-	0x63, 0x65, 0x72, 0x74, 0x2e, 0x6f, 0x72, 0x67, 0x2f, 0x72, 0x65, 0x76,
-	0x6f, 0x6b, 0x65, 0x2e, 0x63, 0x72, 0x6c, 0x30, 0x34, 0x06, 0x09, 0x60,
-	0x86, 0x48, 0x01, 0x86, 0xf8, 0x42, 0x01, 0x08, 0x04, 0x27, 0x16, 0x25,
-	0x68, 0x74, 0x74, 0x70, 0x3a, 0x2f, 0x2f, 0x77, 0x77, 0x77, 0x2e, 0x63,
-	0x61, 0x63, 0x65, 0x72, 0x74, 0x2e, 0x6f, 0x72, 0x67, 0x2f, 0x69, 0x6e,
-	0x64, 0x65, 0x78, 0x2e, 0x70, 0x68, 0x70, 0x3f, 0x69, 0x64, 0x3d, 0x31,
-	0x30, 0x30, 0x56, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x86, 0xf8, 0x42,
-	0x01, 0x0d, 0x04, 0x49, 0x16, 0x47, 0x54, 0x6f, 0x20, 0x67, 0x65, 0x74,
-	0x20, 0x79, 0x6f, 0x75, 0x72, 0x20, 0x6f, 0x77, 0x6e, 0x20, 0x63, 0x65,
-	0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x20, 0x66, 0x6f,
-	0x72, 0x20, 0x46, 0x52, 0x45, 0x45, 0x20, 0x68, 0x65, 0x61, 0x64, 0x20,
-	0x6f, 0x76, 0x65, 0x72, 0x20, 0x74, 0x6f, 0x20, 0x68, 0x74, 0x74, 0x70,
-	0x3a, 0x2f, 0x2f, 0x77, 0x77, 0x77, 0x2e, 0x63, 0x61, 0x63, 0x65, 0x72,
-	0x74, 0x2e, 0x6f, 0x72, 0x67, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48,
-	0x86, 0xf7, 0x0d, 0x01, 0x01, 0x04, 0x05, 0x00, 0x03, 0x82, 0x02, 0x01,
-	0x00, 0x28, 0xc7, 0xee, 0x9c, 0x82, 0x02, 0xba, 0x5c, 0x80, 0x12, 0xca,
-	0x35, 0x0a, 0x1d, 0x81, 0x6f, 0x89, 0x6a, 0x99, 0xcc, 0xf2, 0x68, 0x0f,
-	0x7f, 0xa7, 0xe1, 0x8d, 0x58, 0x95, 0x3e, 0xbd, 0xf2, 0x06, 0xc3, 0x90,
-	0x5a, 0xac, 0xb5, 0x60, 0xf6, 0x99, 0x43, 0x01, 0xa3, 0x88, 0x70, 0x9c,
-	0x9d, 0x62, 0x9d, 0xa4, 0x87, 0xaf, 0x67, 0x58, 0x0d, 0x30, 0x36, 0x3b,
-	0xe6, 0xad, 0x48, 0xd3, 0xcb, 0x74, 0x02, 0x86, 0x71, 0x3e, 0xe2, 0x2b,
-	0x03, 0x68, 0xf1, 0x34, 0x62, 0x40, 0x46, 0x3b, 0x53, 0xea, 0x28, 0xf4,
-	0xac, 0xfb, 0x66, 0x95, 0x53, 0x8a, 0x4d, 0x5d, 0xfd, 0x3b, 0xd9, 0x60,
-	0xd7, 0xca, 0x79, 0x69, 0x3b, 0xb1, 0x65, 0x92, 0xa6, 0xc6, 0x81, 0x82,
-	0x5c, 0x9c, 0xcd, 0xeb, 0x4d, 0x01, 0x8a, 0xa5, 0xdf, 0x11, 0x55, 0xaa,
-	0x15, 0xca, 0x1f, 0x37, 0xc0, 0x82, 0x98, 0x70, 0x61, 0xdb, 0x6a, 0x7c,
-	0x96, 0xa3, 0x8e, 0x2e, 0x54, 0x3e, 0x4f, 0x21, 0xa9, 0x90, 0xef, 0xdc,
-	0x82, 0xbf, 0xdc, 0xe8, 0x45, 0xad, 0x4d, 0x90, 0x73, 0x08, 0x3c, 0x94,
-	0x65, 0xb0, 0x04, 0x99, 0x76, 0x7f, 0xe2, 0xbc, 0xc2, 0x6a, 0x15, 0xaa,
-	0x97, 0x04, 0x37, 0x24, 0xd8, 0x1e, 0x94, 0x4e, 0x6d, 0x0e, 0x51, 0xbe,
-	0xd6, 0xc4, 0x8f, 0xca, 0x96, 0x6d, 0xf7, 0x43, 0xdf, 0xe8, 0x30, 0x65,
-	0x27, 0x3b, 0x7b, 0xbb, 0x43, 0x43, 0x63, 0xc4, 0x43, 0xf7, 0xb2, 0xec,
-	0x68, 0xcc, 0xe1, 0x19, 0x8e, 0x22, 0xfb, 0x98, 0xe1, 0x7b, 0x5a, 0x3e,
-	0x01, 0x37, 0x3b, 0x8b, 0x08, 0xb0, 0xa2, 0xf3, 0x95, 0x4e, 0x1a, 0xcb,
-	0x9b, 0xcd, 0x9a, 0xb1, 0xdb, 0xb2, 0x70, 0xf0, 0x2d, 0x4a, 0xdb, 0xd8,
-	0xb0, 0xe3, 0x6f, 0x45, 0x48, 0x33, 0x12, 0xff, 0xfe, 0x3c, 0x32, 0x2a,
-	0x54, 0xf7, 0xc4, 0xf7, 0x8a, 0xf0, 0x88, 0x23, 0xc2, 0x47, 0xfe, 0x64,
-	0x7a, 0x71, 0xc0, 0xd1, 0x1e, 0xa6, 0x63, 0xb0, 0x07, 0x7e, 0xa4, 0x2f,
-	0xd3, 0x01, 0x8f, 0xdc, 0x9f, 0x2b, 0xb6, 0xc6, 0x08, 0xa9, 0x0f, 0x93,
-	0x48, 0x25, 0xfc, 0x12, 0xfd, 0x9f, 0x42, 0xdc, 0xf3, 0xc4, 0x3e, 0xf6,
-	0x57, 0xb0, 0xd7, 0xdd, 0x69, 0xd1, 0x06, 0x77, 0x34, 0x0a, 0x4b, 0xd2,
-	0xca, 0xa0, 0xff, 0x1c, 0xc6, 0x8c, 0xc9, 0x16, 0xbe, 0xc4, 0xcc, 0x32,
-	0x37, 0x68, 0x73, 0x5f, 0x08, 0xfb, 0x51, 0xf7, 0x49, 0x53, 0x36, 0x05,
-	0x0a, 0x95, 0x02, 0x4c, 0xf2, 0x79, 0x1a, 0x10, 0xf6, 0xd8, 0x3a, 0x75,
-	0x9c, 0xf3, 0x1d, 0xf1, 0xa2, 0x0d, 0x70, 0x67, 0x86, 0x1b, 0xb3, 0x16,
-	0xf5, 0x2f, 0xe5, 0xa4, 0xeb, 0x79, 0x86, 0xf9, 0x3d, 0x0b, 0xc2, 0x73,
-	0x0b, 0xa5, 0x99, 0xac, 0x6f, 0xfc, 0x67, 0xb8, 0xe5, 0x2f, 0x0b, 0xa6,
-	0x18, 0x24, 0x8d, 0x7b, 0xd1, 0x48, 0x35, 0x29, 0x18, 0x40, 0xac, 0x93,
-	0x60, 0xe1, 0x96, 0x86, 0x50, 0xb4, 0x7a, 0x59, 0xd8, 0x8f, 0x21, 0x0b,
-	0x9f, 0xcf, 0x82, 0x91, 0xc6, 0x3b, 0xbf, 0x6b, 0xdc, 0x07, 0x91, 0xb9,
-	0x97, 0x56, 0x23, 0xaa, 0xb6, 0x6c, 0x94, 0xc6, 0x48, 0x06, 0x3c, 0xe4,
-	0xce, 0x4e, 0xaa, 0xe4, 0xf6, 0x2f, 0x09, 0xdc, 0x53, 0x6f, 0x2e, 0xfc,
-	0x74, 0xeb, 0x3a, 0x63, 0x99, 0xc2, 0xa6, 0xac, 0x89, 0xbc, 0xa7, 0xb2,
-	0x44, 0xa0, 0x0d, 0x8a, 0x10, 0xe3, 0x6c, 0xf2, 0x24, 0xcb, 0xfa, 0x9b,
-	0x9f, 0x70, 0x47, 0x2e, 0xde, 0x14, 0x8b, 0xd4, 0xb2, 0x20, 0x09, 0x96,
-	0xa2, 0x64, 0xf1, 0x24, 0x1c, 0xdc, 0xa1, 0x35, 0x9c, 0x15, 0xb2, 0xd4,
-	0xbc, 0x55, 0x2e, 0x7d, 0x06, 0xf5, 0x9c, 0x0e, 0x55, 0xf4, 0x5a, 0xd6,
-	0x93, 0xda, 0x76, 0xad, 0x25, 0x73, 0x4c, 0xc5, 0x43,
 }
