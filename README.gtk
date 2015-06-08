@@ -1,0 +1,58 @@
+8 June 2015
+Seattle, Washington, USA
+
+*** XMPP-CLIENT+GTK ***
+
+This fork of AGL's xmpp-client adds a GTK interface to the existing CLI. 
+Mattn's GTK 2 port is used (https://github.com/mattn/go-gtk).
+
+The GUI design is similar to xchat, with a single input widget, an 
+updating contacts widget, and tabbed windows for output specific to a 
+particular conversation. 
+
+Currently, the program must still be opened from the command line, 
+and both the terminal and the GTK window remain open. Once fuller 
+functionality is in place, I'll remove the terminal-dependent code.
+
+Another temporary measure is the use of var guiMode (declared in gui.go 
+but present in conditional statements all over ui.go). When this is set 
+to 0, the original CLI version of xmpp-client runs normally.
+
+Currently there are two branches of the project: main and buttons. Main 
+implements text-based contacts in a GTK TextBuffer. These are updated as
+the client receives presence stanzas. They don't do anything yet except
+display and update, but the idea is that they should be clickable to invoke
+all of the usual chat-client functions concerned with contacts/buddies.
+The buttons branch rips out that contact display code and replaces it with
+GTK buttons, which look a lot nicer but, so far, don't work. Instead of
+working buttons, the contacts widget is currently filled up with dummy 
+buttons.
+
+The buttons branch has a much better segregation of the GUI code into 
+my new gui.go file, but there is still a lot of improvement possible.
+The only legacy file I have had to touch is ui.go.
+
+The code in both branches compiles and can be used for chatting. Certain
+functionality is unavailable: 
+
+* Auto-complete is not available in the GUI input window. Eventually it
+  shouldn't needed, since clicking a contact will trigger GUI features
+  that render it unnecessary.
+
+* There is no input capability in the terminal. However, most of the 
+  slash (/) commands do work from the GUI input.
+
+* The Help command doesn't work yet.
+
+* The Roster command is disabled and some of its code has been moved to
+  the GUI. Presence updates are visible in the status tab and (for main branch) 
+  in the Contacts widget.
+
+* To begin chatting with someone, you must initially type or paste the entire 
+  JID into the input widget and follow it with a colon and your first message. 
+  After that, the program remembers who you are talking to and you can just 
+  type messages. Switching to a new contact works as it did in the CLI, minus 
+  auto-complete.
+
+-- David Robinson
+   (jdormansteele)
