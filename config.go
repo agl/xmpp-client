@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/agl/xmpp-client/xmpp"
+	"github.com/juniorz/otr-keychain"
 	"golang.org/x/crypto/otr"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/proxy"
@@ -152,14 +154,14 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		config.UseTor = true
 	}
 
-	term.SetPrompt("File to import libotr private key from (enter to generate): ")
-
 	var priv otr.PrivateKey
 	for {
+		term.SetPrompt("File to import libotr private key from (enter to generate): ")
 		importFile, err := term.ReadLine()
 		if err != nil {
 			return false
 		}
+
 		if len(importFile) > 0 {
 			privKeyBytes, err := ioutil.ReadFile(importFile)
 			if err != nil {
@@ -167,11 +169,36 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 				continue
 			}
 
-			if !priv.Import(privKeyBytes) {
+			privKeys := keychain.ImportFromLibOTR(privKeyBytes)
+			numKeys := len(privKeys)
+			if numKeys == 0 {
 				alert(term, "Failed to parse libotr private key file (the parser is pretty simple I'm afraid)")
 				continue
 			}
-			break
+
+			if numKeys == 1 {
+				priv = privKeys[0]
+				break
+			}
+
+			info(term, fmt.Sprintf("%d keys found:", numKeys))
+			for i, k := range privKeys {
+				info(term, fmt.Sprintf("(%d) fingerprint: %s", i+1, hex.EncodeToString(k.Fingerprint())))
+			}
+
+			term.SetPrompt("Choose one to import (enter to choose another file): ")
+
+			if otrKeyQuery, err := term.ReadLine(); err != nil || len(otrKeyQuery) == 0 || otrKeyQuery[0] == '0' {
+				continue
+			} else {
+				if i, err := strconv.Atoi(otrKeyQuery); err != nil || i > numKeys || i < 1 {
+					continue
+				} else {
+					priv = privKeys[i-1]
+					info(term, fmt.Sprintf("Importing private key with fingerprint %s", hex.EncodeToString(priv.Fingerprint())))
+					break
+				}
+			}
 		} else {
 			info(term, "Generating private key...")
 			priv.Generate(rand.Reader)
