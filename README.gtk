@@ -1,3 +1,11 @@
+17 July 2015
+Seattle, Washington, USA
+
+Change to master branch: Code moved out of ui.go where possible and moved
+to gui.go. This brings the foundations of master branch and buttons branch 
+into sync.
+
+
 8 June 2015
 Seattle, Washington, USA
 

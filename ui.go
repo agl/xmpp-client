@@ -28,13 +28,6 @@ import (
 	"time"
 )
 
-// GUI variables initialized so that the display() and
-// buildGUI() functions don't create "undefined" errors
-var window *gtk.Window
-var statusTabView *gtk.TextView
-var convoTabView *gtk.TextView
-var contactsView *gtk.TextView
-
 var configFile *string = flag.String("config-file", "", "Location of the config file")
 var createAccount *bool = flag.Bool("create", false, "If true, attempt to create account")
 
@@ -120,14 +113,14 @@ func critical(term *terminal.Terminal, msg string) {
 }
 
 type Session struct {
-	account       string
-	conn          *xmpp.Conn
-	term          *terminal.Terminal
-	statusTabView *gtk.TextView // added member
-	convoTabView  *gtk.TextView // added member
-	contactsView  *gtk.TextView // added member
-	roster        []xmpp.RosterEntry
-	input         Input
+	account string
+	conn    *xmpp.Conn
+	term    *terminal.Terminal
+	//	statusTabView *gtk.TextView // added member
+	//	convoTabView  *gtk.TextView // added member
+	//	contactsView  *gtk.TextView // added member
+	roster []xmpp.RosterEntry
+	input  Input
 	// conversations maps from a JID (without the resource) to an OTR
 	// conversation. (Note that unencrypted conversations also pass through
 	// OTR.)
@@ -182,7 +175,7 @@ func (s *Session) readMessages(stanzaChan chan<- xmpp.Stanza) {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, s.statusTabView, err.Error(), nil)
+				displayText(ALERT, g.statusTabView, err.Error())
 			}
 			// -GUI
 
@@ -206,8 +199,10 @@ func main() {
 	// GTK GUI block
 	if guiMode == 1 {
 		initializeGTK()
-		window, statusTabView, convoTabView, contactsView = buildGUI() // Assemble the GUI and get display vars
-		window.ShowAll()                                               // Display the GTK window and its contents
+		buildGUI() // Assemble the GUI struct with display vars
+		//		window, g.statusTabView, g.convoTabView, contactsView = buildGUI()
+		//		window.ShowAll()
+		g.window.ShowAll() // Display the GTK window and its contents
 	}
 	// End GTK BLOCK -- call to gtk.Main() deferred until the end of main()
 
@@ -237,7 +232,7 @@ func main() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, statusTabView, "$HOME not set. Please either export $HOME or use the -config-file option.\n", nil)
+				displayText(ALERT, g.statusTabView, "$HOME not set. Please either export $HOME or use the -config-file option.\n")
 			}
 			// -GUI
 
@@ -257,7 +252,7 @@ func main() {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, statusTabView, "Failed to parse config file: "+err.Error(), nil)
+			displayText(ALERT, g.statusTabView, "Failed to parse config file: "+err.Error())
 		}
 		// -GUI
 
@@ -276,7 +271,7 @@ func main() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, statusTabView, "Failed to read password: "+err.Error(), nil)
+				displayText(ALERT, g.statusTabView, "Failed to read password: "+err.Error())
 			}
 			// -GUI
 
@@ -291,7 +286,7 @@ func main() {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, statusTabView, "Invalid username (want user@domain): "+err.Error(), nil)
+			displayText(ALERT, g.statusTabView, "Invalid username (want user@domain): "+err.Error())
 		}
 		// -GUI
 
@@ -312,7 +307,7 @@ func main() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, statusTabView, "Cannot connect via a proxy without Server and Port being set in the config file as an SRV lookup would leak information.", nil)
+				displayText(ALERT, g.statusTabView, "Cannot connect via a proxy without Server and Port being set in the config file as an SRV lookup would leak information.")
 			}
 			// -GUI
 
@@ -334,7 +329,7 @@ func main() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, statusTabView, "Failed to parse "+config.Proxies[i]+" as a URL: "+err.Error(), nil)
+				displayText(ALERT, g.statusTabView, "Failed to parse "+config.Proxies[i]+" as a URL: "+err.Error())
 			}
 			// -GUI
 
@@ -348,7 +343,7 @@ func main() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, statusTabView, "Failed to parse "+config.Proxies[i]+" as a proxy: "+err.Error(), nil)
+				displayText(ALERT, g.statusTabView, "Failed to parse "+config.Proxies[i]+" as a proxy: "+err.Error())
 			}
 			// -GUI
 
@@ -364,7 +359,7 @@ func main() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, statusTabView, "Failed to parse ServerCertificateSHA256 (should be hex string): "+err.Error(), nil)
+				displayText(ALERT, g.statusTabView, "Failed to parse ServerCertificateSHA256 (should be hex string): "+err.Error())
 			}
 			// -GUI
 
@@ -375,7 +370,7 @@ func main() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, statusTabView, "ServerCertificateSHA256 is not 32 bytes long", nil)
+				displayText(ALERT, g.statusTabView, "ServerCertificateSHA256 is not 32 bytes long")
 			}
 			// -GUI
 
@@ -414,7 +409,7 @@ func main() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, statusTabView, "Failed to open raw log file: "+err.Error(), nil)
+				displayText(ALERT, g.statusTabView, "Failed to open raw log file: "+err.Error())
 			}
 			// -GUI
 
@@ -446,7 +441,7 @@ func main() {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, statusTabView, "Making connection to "+addr+" via proxy", nil)
+			displayText(INFO, g.statusTabView, "Making connection to "+addr+" via proxy")
 		}
 		// -GUI
 
@@ -456,7 +451,7 @@ func main() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, statusTabView, "Failed to connect via proxy: "+err.Error(), nil)
+				displayText(ALERT, g.statusTabView, "Failed to connect via proxy: "+err.Error())
 			}
 			// -GUI
 
@@ -470,7 +465,7 @@ func main() {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, statusTabView, "Failed to connect to XMPP server: "+err.Error(), nil)
+			displayText(ALERT, g.statusTabView, "Failed to connect to XMPP server: "+err.Error())
 		}
 		// -GUI
 
@@ -482,9 +477,6 @@ func main() {
 		account:           config.Account,
 		conn:              conn,
 		term:              term,
-		statusTabView:     statusTabView, // GUI -- added member
-		convoTabView:      convoTabView,  // GUI -- added member
-		contactsView:      contactsView,  // GUI -- added member
 		conversations:     make(map[string]*otr.Conversation),
 		knownStates:       make(map[string]string),
 		privateKey:        new(otr.PrivateKey),
@@ -496,7 +488,7 @@ func main() {
 
 	// +GUI
 	if guiMode == 1 {
-		g.display(INFO, statusTabView, "Fetching roster", nil)
+		displayText(INFO, g.statusTabView, "Fetching roster")
 	}
 	// -GUI
 
@@ -508,7 +500,7 @@ func main() {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, statusTabView, "Failed to request roster: "+err.Error(), nil)
+			displayText(ALERT, g.statusTabView, "Failed to request roster: "+err.Error())
 		}
 		// -GUI
 
@@ -543,7 +535,7 @@ func main() {
 	// +GUI -- Some formatting irregularities on this one, solved.
 	if guiMode == 1 {
 		key := fmt.Sprintf("Your fingerprint is %x", s.privateKey.Fingerprint())
-		g.display(INFO, statusTabView, key, nil)
+		displayText(INFO, g.statusTabView, key)
 	}
 	// -GUI
 
@@ -877,7 +869,7 @@ func main() {
 				case edit := <-s.pendingRosterChan:
 					if !edit.isComplete {
 
-						g.display(INFO, statusTabView, "Please edit "+edit.fileName+" and run /rostereditdone when complete", nil)
+						displayText(INFO, g.statusTabView, "Please edit "+edit.fileName+" and run /rostereditdone when complete")
 
 						s.pendingRosterEdit = edit
 						continue
@@ -885,28 +877,28 @@ func main() {
 					if s.processEditedRoster(edit) {
 						s.pendingRosterEdit = nil
 					} else {
-						g.display(ALERT, statusTabView, "Please reedit file and run /rostereditdone again", nil)
+						displayText(ALERT, g.statusTabView, "Please reedit file and run /rostereditdone again")
 					}
 
 				case rosterStanza, ok := <-rosterReply:
 					if !ok {
-						g.display(ALERT, statusTabView, "Failed to read roster: "+err.Error(), nil)
+						displayText(ALERT, g.statusTabView, "Failed to read roster: "+err.Error())
 						return
 					}
 					if s.roster, err = xmpp.ParseRoster(rosterStanza); err != nil {
-						g.display(ALERT, statusTabView, "Failed to parse roster: "+err.Error(), nil)
+						displayText(ALERT, g.statusTabView, "Failed to parse roster: "+err.Error())
 						return
 					}
 					for _, entry := range s.roster {
 						s.input.AddUser(entry.Jid)
 					}
-					g.display(INFO, statusTabView, "Roster received", nil)
+					displayText(INFO, g.statusTabView, "Roster received")
 
 				// Here is where commands, including msgCommand, are directed.
 
 				case cmd, ok := <-commandChan:
 					if !ok {
-						g.display(WARN, statusTabView, "Exiting because command channel closed", nil)
+						displayText(WARN, g.statusTabView, "Exiting because command channel closed")
 						break // MainLoop
 					}
 					s.lastActionTime = time.Now()
@@ -923,7 +915,7 @@ func main() {
 					case versionCommand:
 						replyChan, cookie, err := s.conn.SendIQ(cmd.User, "get", xmpp.VersionQuery{})
 						if err != nil {
-							g.display(ALERT, statusTabView, "Error sending version request: "+err.Error(), nil)
+							displayText(ALERT, g.statusTabView, "Error sending version request: "+err.Error())
 							continue
 						}
 						s.timeouts[cookie] = time.Now().Add(5 * time.Second)
@@ -966,12 +958,12 @@ func main() {
 					//							if ok {
 					//								line += "\t" + state
 					//							}
-					//							g.display(ROSTER, s.contactsView, line, nil)
+					//							displayText(ROSTER, s.contactsView, line, nil, "")
 					//						}
 
 					case rosterEditCommand:
 						if s.pendingRosterEdit != nil {
-							g.display(WARN, s.statusTabView, "Aborting previous roster edit", nil)
+							displayText(WARN, g.statusTabView, "Aborting previous roster edit")
 							s.pendingRosterEdit = nil
 						}
 						rosterCopy := make([]xmpp.RosterEntry, len(s.roster))
@@ -979,7 +971,7 @@ func main() {
 						go s.editRoster(rosterCopy)
 					case rosterEditDoneCommand:
 						if s.pendingRosterEdit == nil {
-							g.display(WARN, s.statusTabView, "No roster edit in progress. Use /rosteredit to start one", nil)
+							displayText(WARN, g.statusTabView, "No roster edit in progress. Use /rosteredit to start one")
 							continue
 						}
 						go s.loadEditedRoster(*s.pendingRosterEdit)
@@ -988,9 +980,9 @@ func main() {
 						s.config.Save()
 						// Tell the user the current state of the statuses
 						if s.config.HideStatusUpdates {
-							g.display(INFO, s.statusTabView, "Status updates disabled", nil)
+							displayText(INFO, g.statusTabView, "Status updates disabled")
 						} else {
-							g.display(INFO, s.statusTabView, "Status updates enabled", nil)
+							displayText(INFO, g.statusTabView, "Status updates enabled")
 						}
 					case confirmCommand:
 						s.handleConfirmOrDeny(cmd.User, true /* confirm */)
@@ -1008,7 +1000,7 @@ func main() {
 							cmd.setPromptIsEncrypted <- isEncrypted
 						}
 						if !isEncrypted && config.ShouldEncryptTo(cmd.to) {
-							g.display(WARN, s.statusTabView, fmt.Sprintf("Did not send: no encryption established with %s", cmd.to), nil)
+							displayText(WARN, g.statusTabView, fmt.Sprintf("Did not send: no encryption established with %s", cmd.to))
 							continue
 						}
 						var msgs [][]byte
@@ -1037,10 +1029,10 @@ func main() {
 					case otrCommand:
 						s.conn.Send(string(cmd.User), otr.QueryMessage)
 					case otrInfoCommand:
-						g.display(INFO, s.statusTabView, fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()), nil)
+						displayText(INFO, g.statusTabView, fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()))
 						for to, conversation := range s.conversations {
 							if conversation.IsEncrypted() {
-								g.display(INFO, s.statusTabView, fmt.Sprintf("Secure session with %s underway:", to), nil)
+								displayText(INFO, g.statusTabView, fmt.Sprintf("Secure session with %s underway:", to))
 								printConversationInfo(&s, to, conversation)
 							}
 						}
@@ -1048,7 +1040,7 @@ func main() {
 						to := string(cmd.User)
 						conversation, ok := s.conversations[to]
 						if !ok {
-							g.display(ALERT, s.statusTabView, "Error sending version request: "+err.Error(), nil)
+							displayText(ALERT, g.statusTabView, "Error sending version request: "+err.Error())
 							break
 						}
 						msgs := conversation.End()
@@ -1056,17 +1048,17 @@ func main() {
 							s.conn.Send(to, string(msg))
 						}
 						s.input.SetPromptForTarget(cmd.User, false)
-						g.display(WARN, s.statusTabView, "OTR conversation ended with "+cmd.User, nil)
+						displayText(WARN, g.statusTabView, "OTR conversation ended with "+cmd.User)
 					case authQACommand:
 						to := string(cmd.User)
 						conversation, ok := s.conversations[to]
 						if !ok {
-							g.display(ALERT, s.statusTabView, "Can't authenticate without a secure conversation established", nil)
+							displayText(ALERT, g.statusTabView, "Can't authenticate without a secure conversation established")
 							break
 						}
 						msgs, err := conversation.Authenticate(cmd.Question, []byte(cmd.Secret))
 						if err != nil {
-							g.display(ALERT, s.statusTabView, "Error while starting authentication with "+to+": "+err.Error(), nil)
+							displayText(ALERT, g.statusTabView, "Error while starting authentication with "+to+": "+err.Error())
 						}
 						for _, msg := range msgs {
 							s.conn.Send(to, string(msg))
@@ -1074,17 +1066,17 @@ func main() {
 					case authOobCommand:
 						fpr, err := hex.DecodeString(cmd.Fingerprint)
 						if err != nil {
-							g.display(ALERT, s.statusTabView, fmt.Sprintf("Invalid fingerprint %s - not authenticated", cmd.Fingerprint), nil)
+							displayText(ALERT, g.statusTabView, fmt.Sprintf("Invalid fingerprint %s - not authenticated", cmd.Fingerprint))
 							break
 						}
 						existing := s.config.UserIdForFingerprint(fpr)
 						if len(existing) != 0 {
-							g.display(ALERT, s.statusTabView, fmt.Sprintf("Fingerprint %s already belongs to %s", cmd.Fingerprint, existing), nil)
+							displayText(ALERT, g.statusTabView, fmt.Sprintf("Fingerprint %s already belongs to %s", cmd.Fingerprint, existing))
 							break
 						}
 						s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: cmd.User})
 						s.config.Save()
-						g.display(INFO, s.statusTabView, fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User), nil)
+						displayText(INFO, g.statusTabView, fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User))
 					case awayCommand:
 						s.conn.SignalPresence("away")
 					case chatCommand:
@@ -1098,7 +1090,7 @@ func main() {
 					}
 				case rawStanza, ok := <-stanzaChan:
 					if !ok {
-						g.display(WARN, statusTabView, "Exiting because channel to server closed", nil)
+						displayText(WARN, g.statusTabView, "Exiting because channel to server closed")
 						break // MainLoop
 					}
 					switch stanza := rawStanza.Value.(type) {
@@ -1122,7 +1114,7 @@ func main() {
 							}
 						}
 						if err := s.conn.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
-							g.display(ALERT, statusTabView, "Failed to send IQ message: "+err.Error(), nil)
+							displayText(ALERT, g.statusTabView, "Failed to send IQ message: "+err.Error())
 						}
 					case *xmpp.StreamError:
 						var text string
@@ -1131,11 +1123,11 @@ func main() {
 						} else {
 							text = fmt.Sprintf("%s", stanza.Any)
 						}
-						g.display(ALERT, statusTabView, "Exiting in response to fatal error from server: "+text, nil)
+						displayText(ALERT, g.statusTabView, "Exiting in response to fatal error from server: "+text)
 						break // MainLoop
 
 					default:
-						g.display(INFO, statusTabView, fmt.Sprintf("%s %s", rawStanza.Name, rawStanza.Value), nil)
+						displayText(INFO, g.statusTabView, fmt.Sprintf("%s %s", rawStanza.Name, rawStanza.Value))
 					}
 				}
 			}
@@ -1182,7 +1174,7 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(WARN, s.statusTabView, "Ignoring roster IQ from bad address: "+stanza.From, nil)
+				displayText(WARN, g.statusTabView, "Ignoring roster IQ from bad address: "+stanza.From)
 			}
 			// -GUI
 
@@ -1194,7 +1186,7 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(WARN, s.statusTabView, "Failed to parse roster push IQ", nil)
+				displayText(WARN, g.statusTabView, "Failed to parse roster push IQ")
 			}
 			// -GUI
 
@@ -1230,7 +1222,7 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, "Unknown IQ: "+startElem.Name.Space+" "+startElem.Name.Local, nil)
+			displayText(INFO, g.statusTabView, "Unknown IQ: "+startElem.Name.Space+" "+startElem.Name.Local)
 		}
 		// -GUI
 
@@ -1246,7 +1238,7 @@ func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(WARN, s.statusTabView, "No pending subscription from "+jid, nil)
+			displayText(WARN, g.statusTabView, "No pending subscription from "+jid)
 		}
 		// -GUI
 
@@ -1262,7 +1254,7 @@ func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, s.statusTabView, "Error sending presence stanza: "+err.Error(), nil)
+			displayText(ALERT, g.statusTabView, "Error sending presence stanza: "+err.Error())
 		}
 		// -GUI
 
@@ -1277,7 +1269,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, s.statusTabView, "Error reported from "+from+": "+stanza.Body, nil)
+			displayText(ALERT, g.statusTabView, "Error reported from "+from+": "+stanza.Body)
 		}
 		// -GUI
 
@@ -1297,7 +1289,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, s.statusTabView, "While processing message from "+from+": "+err.Error(), nil)
+			displayText(ALERT, g.statusTabView, "While processing message from "+from+": "+err.Error())
 		}
 		// -GUI
 
@@ -1314,7 +1306,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, fmt.Sprintf("New OTR session with %s established", from), nil)
+			displayText(INFO, g.statusTabView, fmt.Sprintf("New OTR session with %s established", from))
 		}
 		// -GUI
 
@@ -1332,7 +1324,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 				// +GUI
 				if guiMode == 1 {
-					g.display(ALERT, s.statusTabView, fmt.Sprintf("No secure session established; unable to automatically tear down OTR conversation with %s.", from), nil)
+					displayText(ALERT, g.statusTabView, fmt.Sprintf("No secure session established; unable to automatically tear down OTR conversation with %s.", from))
 				}
 				// -GUI
 
@@ -1342,7 +1334,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 				// +GUI
 				if guiMode == 1 {
-					g.display(INFO, s.statusTabView, fmt.Sprintf("%s has ended the secure conversation.", from), nil)
+					displayText(INFO, g.statusTabView, fmt.Sprintf("%s has ended the secure conversation.", from))
 				}
 				// -GUI
 
@@ -1354,7 +1346,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 				// +GUI
 				if guiMode == 1 {
-					g.display(INFO, s.statusTabView, fmt.Sprintf("Secure session with %s has been automatically ended. Messages will be sent in the clear until another OTR session is established.", from), nil)
+					displayText(INFO, g.statusTabView, fmt.Sprintf("Secure session with %s has been automatically ended. Messages will be sent in the clear until another OTR session is established.", from))
 				}
 				// -GUI
 
@@ -1364,7 +1356,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(INFO, s.statusTabView, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from), nil)
+				displayText(INFO, g.statusTabView, fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
 			}
 			// -GUI
 
@@ -1374,7 +1366,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from), nil)
+			displayText(INFO, g.statusTabView, fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from))
 		}
 		// -GUI
 
@@ -1383,7 +1375,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(INFO, s.statusTabView, fmt.Sprintf("%s asks: %s", from, question), nil)
+				displayText(INFO, g.statusTabView, fmt.Sprintf("%s asks: %s", from, question))
 			}
 			// -GUI
 
@@ -1393,7 +1385,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, fmt.Sprintf("Authentication with %s successful", from), nil)
+			displayText(INFO, g.statusTabView, fmt.Sprintf("Authentication with %s successful", from))
 		}
 		// -GUI
 
@@ -1407,7 +1399,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, s.statusTabView, fmt.Sprintf("Authentication with %s failed", from), nil)
+			displayText(ALERT, g.statusTabView, fmt.Sprintf("Authentication with %s failed", from))
 		}
 		// -GUI
 
@@ -1429,7 +1421,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 				// +GUI
 				if guiMode == 1 {
-					g.display(INFO, s.statusTabView, fmt.Sprintf("%s appears to support OTRv1. You should encourage them to upgrade their OTR client!", from), nil)
+					displayText(INFO, g.statusTabView, fmt.Sprintf("%s appears to support OTRv1. You should encourage them to upgrade their OTR client!", from))
 				}
 				// -GUI
 
@@ -1449,7 +1441,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, fmt.Sprintf("%s appears to support OTRv%d. We are attempting to start an OTR session with them.", from, detectedOTRVersion), nil)
+			displayText(INFO, g.statusTabView, fmt.Sprintf("%s appears to support OTRv%d. We are attempting to start an OTR session with them.", from, detectedOTRVersion))
 		}
 		// -GUI
 
@@ -1459,7 +1451,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, fmt.Sprintf("%s appears to support OTRv%d. You should encourage them to upgrade their OTR client!", from, detectedOTRVersion), nil)
+			displayText(INFO, g.statusTabView, fmt.Sprintf("%s appears to support OTRv%d. You should encourage them to upgrade their OTR client!", from, detectedOTRVersion))
 		}
 		// -GUI
 
@@ -1488,7 +1480,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, s.statusTabView, fmt.Sprintf("Can not parse Delayed Delivery timestamp, using quoted string instead."), nil)
+				displayText(ALERT, g.statusTabView, fmt.Sprintf("Can not parse Delayed Delivery timestamp, using quoted string instead."))
 			}
 			// -GUI
 
@@ -1524,7 +1516,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 
 	// +GUI
 	if guiMode == 1 {
-		g.display(MSG_INCOMING, s.convoTabView, string(line), nil)
+		displayText(MSG_INCOMING, g.convoTabView, string(line))
 	}
 	// -GUI
 
@@ -1554,7 +1546,7 @@ func (s *Session) maybeNotify() {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(INFO, s.statusTabView, "Failed to run notify command: "+err.Error(), nil)
+				displayText(INFO, g.statusTabView, "Failed to run notify command: "+err.Error())
 			}
 			// -GUI
 
@@ -1640,7 +1632,7 @@ func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(WARN, s.statusTabView, "Version request to "+user+" timed out", nil)
+			displayText(WARN, g.statusTabView, "Version request to "+user+" timed out")
 		}
 		// -GUI
 
@@ -1652,7 +1644,7 @@ func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(WARN, s.statusTabView, "Version request to "+user+" resulted in bad reply type", nil)
+			displayText(WARN, g.statusTabView, "Version request to "+user+" resulted in bad reply type")
 		}
 		// -GUI
 
@@ -1664,7 +1656,7 @@ func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(WARN, s.statusTabView, "Version request to "+user+" resulted in XMPP error", nil)
+			displayText(WARN, g.statusTabView, "Version request to "+user+" resulted in XMPP error")
 		}
 		// -GUI
 
@@ -1674,7 +1666,7 @@ func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(WARN, s.statusTabView, "Version request to "+user+" resulted in response with unknown type: "+reply.Type, nil)
+			displayText(WARN, g.statusTabView, "Version request to "+user+" resulted in response with unknown type: "+reply.Type)
 		}
 		// -GUI
 
@@ -1688,7 +1680,7 @@ func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(WARN, s.statusTabView, "Failed to parse version reply from "+user+": "+err.Error(), nil)
+			displayText(WARN, g.statusTabView, "Failed to parse version reply from "+user+": "+err.Error())
 		}
 		// -GUI
 
@@ -1698,7 +1690,7 @@ func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
 
 	// +GUI
 	if guiMode == 1 {
-		g.display(INFO, s.statusTabView, fmt.Sprintf("Version reply from %s: %#v", user, versionReply), nil)
+		displayText(INFO, g.statusTabView, fmt.Sprintf("Version reply from %s: %#v", user, versionReply))
 	}
 	// -GUI
 
@@ -1715,7 +1707,7 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, s.statusTabView, "Failed to create temp dir to edit roster: "+err.Error(), nil)
+			displayText(ALERT, g.statusTabView, "Failed to create temp dir to edit roster: "+err.Error())
 		}
 		// -GUI
 
@@ -1734,7 +1726,7 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, s.statusTabView, "Failed to create temp file: "+err.Error(), nil)
+			displayText(ALERT, g.statusTabView, "Failed to create temp file: "+err.Error())
 		}
 		// -GUI
 
@@ -1873,7 +1865,7 @@ func (s *Session) loadEditedRoster(edit rosterEdit) {
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, s.statusTabView, "Failed to load edited roster: "+err.Error(), nil)
+			displayText(ALERT, g.statusTabView, "Failed to load edited roster: "+err.Error())
 		}
 		// -GUI
 
@@ -1907,7 +1899,7 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, s.statusTabView, fmt.Sprintf("Failed to parse JID on line %d: %s", i+1, err), nil)
+				displayText(ALERT, g.statusTabView, fmt.Sprintf("Failed to parse JID on line %d: %s", i+1, err))
 			}
 			// -GUI
 
@@ -1924,7 +1916,7 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 
 				// +GUI
 				if guiMode == 1 {
-					g.display(ALERT, s.statusTabView, fmt.Sprintf("Failed to find colon in item on line %d", i+1), nil)
+					displayText(ALERT, g.statusTabView, fmt.Sprintf("Failed to find colon in item on line %d", i+1))
 				}
 				// -GUI
 
@@ -1938,7 +1930,7 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 
 				// +GUI
 				if guiMode == 1 {
-					g.display(ALERT, s.statusTabView, fmt.Sprintf("Failed to unescape item on line %d: %s", i+1, err), nil)
+					displayText(ALERT, g.statusTabView, fmt.Sprintf("Failed to unescape item on line %d: %s", i+1, err))
 				}
 				// -GUI
 
@@ -1952,7 +1944,7 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 
 					// +GUI
 					if guiMode == 1 {
-						g.display(ALERT, s.statusTabView, fmt.Sprintf("Multiple names given for contact on line %d", i+1), nil)
+						displayText(ALERT, g.statusTabView, fmt.Sprintf("Multiple names given for contact on line %d", i+1))
 					}
 					// -GUI
 
@@ -1968,7 +1960,7 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 
 				// +GUI
 				if guiMode == 1 {
-					g.display(ALERT, s.statusTabView, fmt.Sprintf("Unknown item tag '%s' on line %d", typ, i+1), nil)
+					displayText(ALERT, g.statusTabView, fmt.Sprintf("Unknown item tag '%s' on line %d", typ, i+1))
 				}
 				// -GUI
 
@@ -2010,7 +2002,7 @@ NextAdd:
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, "Deleting roster entry for "+jid, nil)
+			displayText(INFO, g.statusTabView, "Deleting roster entry for "+jid)
 		}
 		// -GUI
 
@@ -2025,7 +2017,7 @@ NextAdd:
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, s.statusTabView, "Failed to remove roster entry: "+err.Error(), nil)
+				displayText(ALERT, g.statusTabView, "Failed to remove roster entry: "+err.Error())
 			}
 			// -GUI
 
@@ -2048,7 +2040,7 @@ NextAdd:
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, "Updating roster entry for "+entry.Jid, nil)
+			displayText(INFO, g.statusTabView, "Updating roster entry for "+entry.Jid)
 		}
 		// -GUI
 
@@ -2064,7 +2056,7 @@ NextAdd:
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, s.statusTabView, "Failed to update roster entry: "+err.Error(), nil)
+				displayText(ALERT, g.statusTabView, "Failed to update roster entry: "+err.Error())
 			}
 			// -GUI
 
@@ -2076,7 +2068,7 @@ NextAdd:
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, "Adding roster entry for "+entry.Jid, nil)
+			displayText(INFO, g.statusTabView, "Adding roster entry for "+entry.Jid)
 		}
 		// -GUI
 
@@ -2092,7 +2084,7 @@ NextAdd:
 
 			// +GUI
 			if guiMode == 1 {
-				g.display(ALERT, s.statusTabView, "Failed to add roster entry: "+err.Error(), nil)
+				displayText(ALERT, g.statusTabView, "Failed to add roster entry: "+err.Error())
 			}
 			// -GUI
 
@@ -2213,7 +2205,7 @@ func printConversationInfo(s *Session, uid string, conversation *otr.Conversatio
 
 	// +GUI
 	if guiMode == 1 {
-		g.display(INFO, s.statusTabView, fmt.Sprintf("  Fingerprint  for %s: %x", uid, fpr), nil)
+		displayText(INFO, g.statusTabView, fmt.Sprintf("  Fingerprint  for %s: %x", uid, fpr))
 	}
 	// -GUI
 
@@ -2221,7 +2213,7 @@ func printConversationInfo(s *Session, uid string, conversation *otr.Conversatio
 
 	// +GUI
 	if guiMode == 1 {
-		g.display(INFO, s.statusTabView, fmt.Sprintf("  Session  ID  for %s: %x", uid, conversation.SSID), nil)
+		displayText(INFO, g.statusTabView, fmt.Sprintf("  Session  ID  for %s: %x", uid, conversation.SSID))
 	}
 	// -GUI
 
@@ -2230,7 +2222,7 @@ func printConversationInfo(s *Session, uid string, conversation *otr.Conversatio
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(INFO, s.statusTabView, fmt.Sprintf("  Identity key for %s is verified", uid), nil)
+			displayText(INFO, g.statusTabView, fmt.Sprintf("  Identity key for %s is verified", uid))
 		}
 		// -GUI
 
@@ -2239,7 +2231,7 @@ func printConversationInfo(s *Session, uid string, conversation *otr.Conversatio
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, s.statusTabView, fmt.Sprintf("  Warning: %s is using an identity key which was verified for %s", uid, fprUid), nil)
+			displayText(ALERT, g.statusTabView, fmt.Sprintf("  Warning: %s is using an identity key which was verified for %s", uid, fprUid))
 		}
 		// -GUI
 
@@ -2248,7 +2240,7 @@ func printConversationInfo(s *Session, uid string, conversation *otr.Conversatio
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(CRITICAL, s.statusTabView, fmt.Sprintf("  Identity key for %s is incorrect", uid), nil)
+			displayText(CRITICAL, g.statusTabView, fmt.Sprintf("  Identity key for %s is incorrect", uid))
 		}
 		// -GUI
 
@@ -2257,7 +2249,7 @@ func printConversationInfo(s *Session, uid string, conversation *otr.Conversatio
 
 		// +GUI
 		if guiMode == 1 {
-			g.display(ALERT, s.statusTabView, fmt.Sprintf("  Identity key for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", uid), nil)
+			displayText(ALERT, g.statusTabView, fmt.Sprintf("  Identity key for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", uid))
 		}
 		// -GUI
 
