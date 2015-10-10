@@ -115,6 +115,11 @@ func (c *Config) ShouldEncryptTo(uid string) bool {
 	return false
 }
 
+func isYes(s string) bool {
+	lower := strings.ToLower(s)
+	return lower == "yes" || lower == "y"
+}
+
 func enroll(config *Config, term *terminal.Terminal) bool {
 	var err error
 	warn(term, "Enrolling new config file")
@@ -135,16 +140,17 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		break
 	}
 
-	term.SetPrompt("Enable debug logging to /tmp/xmpp-client-debug.log? ")
-	if debugLog, err := term.ReadLine(); err != nil || debugLog != "yes" {
+	const debugLogFile = "/tmp/xmpp-client-debug.log"
+	term.SetPrompt("Enable debug logging to " + debugLogFile + " (y/n)?: ")
+	if debugLog, err := term.ReadLine(); err != nil || !isYes(debugLog) {
 		info(term, "Not enabling debug logging...")
 	} else {
-		info(term, "Debug logging enabled...")
-		config.RawLogFile = "/tmp/xmpp-client-debug.log"
+		config.RawLogFile = debugLogFile
+		info(term, "Debug logging enabled.")
 	}
 
-	term.SetPrompt("Use Tor?: ")
-	if useTorQuery, err := term.ReadLine(); err != nil || len(useTorQuery) == 0 || useTorQuery[0] != 'y' && useTorQuery[0] != 'Y' {
+	term.SetPrompt("Use Tor (y/n)?: ")
+	if useTorQuery, err := term.ReadLine(); err != nil || !isYes(useTorQuery) {
 		info(term, "Not using Tor...")
 		config.UseTor = false
 	} else {
@@ -191,7 +197,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		"jabber.calyxinstitute.org": "ijeeynrc6x2uy5ob.onion",
 		"jabber.otr.im":             "5rgdtlawqkcplz75.onion",
 		"wtfismyip.com":             "ofkztxcohimx34la.onion",
-		"rows.io":                   "yz6yiv2hxyagvwy6.onion", 
+		"rows.io":                   "yz6yiv2hxyagvwy6.onion",
 	}
 
 	// Autoconfigure well known Tor hidden services.
