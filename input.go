@@ -25,6 +25,8 @@ var uiCommands = []uiCommand{
 	{"deny", denyCommand{}, "Deny an inbound subscription request"},
 	{"dnd", dndCommand{}, "Set your status to Busy / Do Not Disturb"},
 	{"help", helpCommand{}, "List known commands"},
+	{"ignore", ignoreCommand{}, "Ignore messages from another user"},
+	{"list-ignores", listIgnoresCommand{}, "List currently ignored users"},
 	{"nopaste", noPasteCommand{}, "Stop interpreting text verbatim"},
 	{"online", onlineCommand{}, "Set your status to Available / Online"},
 	{"otr-auth", authCommand{}, "Authenticate a secure peer with a mutual, shared secret"},
@@ -39,6 +41,7 @@ var uiCommands = []uiCommand{
 	{"rosteredit", rosterEditCommand{}, "Write the roster to disk"},
 	{"roster", rosterCommand{}, "Display the current roster"},
 	{"statusupdates", toggleStatusUpdatesCommand{}, "Toggle if status updates are displayed"},
+	{"unignore", unignoreCommand{}, "Stop ignoring messages from another user"},
 	{"version", versionCommand{}, "Ask a Jabber client for its version"},
 	{"xa", xaCommand{}, "Set your status to Extended Away"},
 }
@@ -83,6 +86,12 @@ type endOTRCommand struct {
 
 type helpCommand struct{}
 
+type ignoreCommand struct {
+	User string "uid"
+}
+
+type listIgnoresCommand struct{}
+
 type msgCommand struct {
 	to  string
 	msg string
@@ -112,6 +121,10 @@ type rosterCommand struct {
 type rosterEditCommand struct{}
 type rosterEditDoneCommand struct{}
 type toggleStatusUpdatesCommand struct{}
+
+type unignoreCommand struct {
+	User string "uid"
+}
 
 type versionCommand struct {
 	User string "uid"

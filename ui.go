@@ -147,6 +147,9 @@ type Session struct {
 	// lastActionTime is the time at which the user last entered a command,
 	// or was last notified.
 	lastActionTime time.Time
+	// ignored is a list of users from whom messages are currently being
+	// ignored, e.g. due to doing `/ignore soandso@jabber.foo`
+	ignored map[string]bool
 }
 
 // rosterEdit contains information about a pending roster edit. Roster edits
@@ -388,6 +391,7 @@ func main() {
 		pendingRosterChan: make(chan *rosterEdit),
 		pendingSubscribes: make(map[string]string),
 		lastActionTime:    time.Now(),
+	    ignored:           make(map[string]bool),
 	}
 	info(term, "Fetching roster")
 
@@ -646,6 +650,12 @@ MainLoop:
 				s.conn.SignalPresence("xa")
 			case onlineCommand:
 				s.conn.SignalPresence("")
+			case ignoreCommand:
+				s.IgnoreUser(cmd.User)
+			case unignoreCommand:
+				s.UnignoreUser(cmd.User)
+			case listIgnoresCommand:
+				s.ListIgnores()
 			}
 		case rawStanza, ok := <-stanzaChan:
 			if !ok {
@@ -775,8 +785,60 @@ func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
 	}
 }
 
+func (s *Session) IgnoreUser(uid string) {
+	s.input.lock.Lock()
+	defer s.input.lock.Unlock()
+
+	hasContact := false
+
+	for _, existingUid := range s.input.uids {
+		if existingUid == uid {
+			hasContact = true
+		}
+	}
+
+	if hasContact {
+		info(s.input.term, fmt.Sprintf("Ignoring all messages from %s", uid))
+	} else {
+		warn(s.input.term, fmt.Sprintf("%s isn't in your contact list... ignoring anyway!", uid))
+	}
+
+	s.ignored[uid] = true
+	info(s.input.term, fmt.Sprintf("Use /unignore %s to continue receiving messages from them.", uid))
+}
+
+func (s *Session) UnignoreUser(uid string) {
+	s.input.lock.Lock()
+	defer s.input.lock.Unlock()
+
+	if s.ignored[uid] {
+		info(s.input.term, fmt.Sprintf("No longer ignoring messages from %s.", uid))
+		delete(s.ignored, uid)
+	}
+}
+
+func (s *Session) ListIgnores() {
+	s.input.lock.Lock()
+	defer s.input.lock.Unlock()
+
+	all := []string
+
+	for ignoredUser, _ := range s.ignored {
+		all.append(ignoredUser)
+	}
+	all.sort()
+
+	for ignoredUser := range all {
+		info(s.input.term, fmt.Sprintf("Ignoring messages from %s", ignoredUser))
+	}
+}
+
 func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	from := xmpp.RemoveResourceFromJid(stanza.From)
+
+	if s.ignored[from] == true {
+		return
+	}
 
 	if stanza.Type == "error" {
 		alert(s.term, "Error reported from "+from+": "+stanza.Body)
