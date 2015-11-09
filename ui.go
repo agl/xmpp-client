@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -147,6 +148,9 @@ type Session struct {
 	// lastActionTime is the time at which the user last entered a command,
 	// or was last notified.
 	lastActionTime time.Time
+	// ignored is a list of users from whom messages are currently being
+	// ignored, e.g. due to doing `/ignore soandso@jabber.foo`
+	ignored map[string]struct{}
 }
 
 // rosterEdit contains information about a pending roster edit. Roster edits
@@ -388,6 +392,8 @@ func main() {
 		pendingRosterChan: make(chan *rosterEdit),
 		pendingSubscribes: make(map[string]string),
 		lastActionTime:    time.Now(),
+		// ignored contains UIDs that are currently being ignored.
+		ignored: make(map[string]struct{}),
 	}
 	info(term, "Fetching roster")
 
@@ -646,6 +652,12 @@ MainLoop:
 				s.conn.SignalPresence("xa")
 			case onlineCommand:
 				s.conn.SignalPresence("")
+			case ignoreCommand:
+				s.ignoreUser(cmd.User)
+			case unignoreCommand:
+				s.unignoreUser(cmd.User)
+			case ignoreListCommand:
+				s.ignoreList()
 			}
 		case rawStanza, ok := <-stanzaChan:
 			if !ok {
@@ -775,8 +787,63 @@ func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
 	}
 }
 
+func (s *Session) ignoreUser(uid string) {
+	if _, ok := s.ignored[uid]; ok {
+		info(s.input.term, "Already ignoring "+uid)
+		return
+	}
+
+	s.input.lock.Lock()
+	defer s.input.lock.Unlock()
+
+	hasContact := false
+
+	for _, existingUid := range s.input.uids {
+		if existingUid == uid {
+			hasContact = true
+		}
+	}
+
+	if hasContact {
+		info(s.input.term, fmt.Sprintf("Ignoring messages from %s for the duration of this session", uid))
+	} else {
+		warn(s.input.term, fmt.Sprintf("%s isn't in your contact list... ignoring anyway for the duration of this session!", uid))
+	}
+
+	s.ignored[uid] = struct{}{}
+	info(s.input.term, fmt.Sprintf("Use '/unignore %s' to continue receiving messages from them.", uid))
+}
+
+func (s *Session) unignoreUser(uid string) {
+	if _, ok := s.ignored[uid]; !ok {
+		info(s.input.term, "No ignore registered for "+uid)
+		return
+	}
+
+	info(s.input.term, "No longer ignoring messages from "+uid)
+	delete(s.ignored, uid)
+}
+
+func (s *Session) ignoreList() {
+	var ignored []string
+
+	for ignoredUser, _ := range s.ignored {
+		ignored = append(ignored, ignoredUser)
+	}
+	sort.Strings(ignored)
+
+	info(s.input.term, "Ignoring messages from these users for the duration of the session:")
+	for _, ignoredUser := range ignored {
+		info(s.term, "  "+ignoredUser)
+	}
+}
+
 func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	from := xmpp.RemoveResourceFromJid(stanza.From)
+
+	if _, ok := s.ignored[from]; ok {
+		return
+	}
 
 	if stanza.Type == "error" {
 		alert(s.term, "Error reported from "+from+": "+stanza.Body)
