@@ -46,6 +46,33 @@ type KnownFingerprint struct {
 	fingerprint    []byte `json:"-"`
 }
 
+func ParseKeyFile(keyfile []byte) map[string][]byte {
+	param := []byte("p #")
+	count := bytes.Count(keyfile, param)
+	keyBytes := make(map[int]int)
+	keys := make(map[string][]byte)
+	
+	if count > 0 {
+		i := len(keyfile)
+		for count > 0 {
+			keyBytes[count] = bytes.LastIndex(keyfile[:i], param)
+			i = keyBytes[count]
+			count--
+		}
+
+		for _, key := range keyBytes {
+			var multiKey otr.PrivateKey
+			multiKey.Import(keyfile[key:])
+			fingerprint := hex.EncodeToString(multiKey.Fingerprint())
+			keys[fingerprint] = keyfile[key:]
+		}
+
+		return keys
+	}
+
+    return nil
+}
+
 func ParseConfig(filename string) (c *Config, err error) {
 	contents, err := ioutil.ReadFile(filename)
 	if err != nil {
@@ -173,11 +200,40 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 				continue
 			}
 
-			if !priv.Import(privKeyBytes) {
-				alert(term, "Failed to parse libotr private key file (the parser is pretty simple I'm afraid)")
-				continue
+			keys := ParseKeyFile(privKeyBytes)
+			if len(keys) > 0 {
+				info(term, "Found key(s): ")
+				for fingerPrint, _ := range keys {
+					info(term, fingerPrint)
+				}
+
+				for {
+					term.SetPrompt("Key to use (fingerprint, enter to generate): ")
+					fp, err := term.ReadLine()
+					if err != nil{
+						return false
+					}
+
+					if fp == "" {
+						info(term, "Generating private key...")
+						priv.Generate(rand.Reader)
+						break
+					}
+					
+					if keys[fp] == nil {
+						alert(term, "Key not found: "+fp)
+						continue
+					}
+
+					privKeyBytes = keys[fp]
+					if !priv.Import(privKeyBytes) {
+						alert(term, "Failed to parse libotr private key file (the parser is pretty simple I'm afraid)")
+						continue
+					}
+					break
+				}
+				break
 			}
-			break
 		} else {
 			info(term, "Generating private key...")
 			priv.Generate(rand.Reader)
