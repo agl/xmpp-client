@@ -543,6 +543,7 @@ func Dial(address, user, domain, password string, config *Config) (c *Conn, err 
 
 			opts := x509.VerifyOptions{
 				Intermediates: x509.NewCertPool(),
+				Roots:         tlsConfig.RootCAs,
 			}
 			for _, cert := range tlsState.PeerCertificates[1:] {
 				opts.Intermediates.AddCert(cert)
