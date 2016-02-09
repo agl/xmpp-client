@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/agl/xmpp-client/xlib"
 	"github.com/agl/xmpp-client/xmpp"
 	"golang.org/x/crypto/otr"
 	"golang.org/x/net/proxy"
@@ -119,7 +120,7 @@ func isYes(s string) bool {
 	return lower == "yes" || lower == "y"
 }
 
-func enroll(config *Config, xio XIO) bool {
+func enroll(config *Config, xio xlib.XIO) bool {
 	var err error
 	xio.Warn("Enrolling new config file")
 

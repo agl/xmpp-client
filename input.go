@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/agl/xmpp-client/xlib"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -345,7 +346,7 @@ func parseCommand(commands []uiCommand, line []byte) (interface{}, string) {
 }
 
 type Input struct {
-	xio                  XIO
+	xio                  xlib.XIO
 	commands             *priorityList
 	lastKeyWasCompletion bool
 

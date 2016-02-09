@@ -2,8 +2,8 @@ package main
 
 import (
 	"bytes"
+	"github.com/agl/xmpp-client/xlib"
 	"testing"
-	"trident.li/xmpp-client/xlib"
 )
 
 var escapingTests = []string{
