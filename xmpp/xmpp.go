@@ -67,6 +67,10 @@ type Conn struct {
 	lock          sync.Mutex
 	inflights     map[Cookie]inflight
 	customStorage map[xml.Name]reflect.Type
+
+	// chatTypes maps from a JID (without the resource) to the
+	// type of conversation if it is not 'chat' (and thus 'groupchat')
+	chatTypes map[string]string
 }
 
 // inflight contains the details of a pending request to which we are awaiting
@@ -266,7 +270,14 @@ func (c *Conn) Send(to, msg string) error {
 		// http://xmpp.org/extensions/xep-0136.html#otr-nego
 		archive = "<nos:x xmlns:nos='google:nosave' value='enabled'/><arc:record xmlns:arc='http://jabber.org/protocol/archive' otr='require'/>"
 	}
-	_, err := fmt.Fprintf(c.out, "<message to='%s' from='%s' type='chat'><body>%s</body>%s</message>", xmlEscape(to), xmlEscape(c.jid), xmlEscape(msg), archive)
+
+	// Only non-'chat' types are listed
+	chattype, cok := c.chatTypes[to]
+	if !cok {
+		chattype = "chat"
+	}
+
+	_, err := fmt.Fprintf(c.out, "<message to='%s' from='%s' type='%s'><body>%s</body>%s</message>", xmlEscape(to), xmlEscape(c.jid), chattype, xmlEscape(msg), archive)
 	return err
 }
 
@@ -282,6 +293,37 @@ func (c *Conn) SendPresence(to, typ, id string) error {
 
 func (c *Conn) SignalPresence(state string) error {
 	_, err := fmt.Fprintf(c.out, "<presence><show>%s</show></presence>", xmlEscape(state))
+	return err
+}
+
+/* XEP-0045 7.2 */
+const nsMUC = "http://jabber.org/protocol/muc"
+
+/* XEP-0045 7.2 & 7.2.6 */
+func (c *Conn) JoinMUC(to, nick, password string) error {
+	if nick == "" {
+		nick = c.jid
+	}
+
+	pw := ""
+	if password != "" {
+		pw = "<password>" + xmlEscape(password) + "</password>\n"
+	}
+
+	_, err := fmt.Fprintf(c.out, "<presence to='%s/%s'>\n<x xmlns='http://jabber.org/protocol/muc'>\n%s</x>\n</presence>", xmlEscape(to), xmlEscape(nick), pw)
+
+	/* Register this as a groupchat */
+	c.chatTypes[to] = "groupchat"
+	return err
+}
+
+/* XEP-0045 7.14 */
+func (c *Conn) LeaveMUC(to string) error {
+	_, err := fmt.Fprintf(c.out, "<presence from='%s' to='%s' type='unavailable' />", c.jid, xmlEscape(to))
+
+	/* Unregister as group chat */
+	delete(c.chatTypes, to)
+
 	return err
 }
 
@@ -471,6 +513,7 @@ func printTLSDetails(w io.Writer, tlsState tls.ConnectionState) {
 func Dial(address, user, domain, password string, config *Config) (c *Conn, err error) {
 	c = new(Conn)
 	c.inflights = make(map[Cookie]inflight)
+	c.chatTypes = make(map[string]string)
 	c.archive = config.Archive
 
 	log := ioutil.Discard

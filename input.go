@@ -27,6 +27,8 @@ var uiCommands = []uiCommand{
 	{"help", helpCommand{}, "List known commands"},
 	{"ignore", ignoreCommand{}, "Ignore messages from another user"},
 	{"ignore-list", ignoreListCommand{}, "List currently ignored users"},
+	{"join", joinCommand{}, "Join a Multi-User-Chat"},
+	{"leave", leaveCommand{}, "Leave a Multi-User-Chat"},
 	{"nopaste", noPasteCommand{}, "Stop interpreting text verbatim"},
 	{"online", onlineCommand{}, "Set your status to Available / Online"},
 	{"otr-auth", authCommand{}, "Authenticate a secure peer with a mutual, shared secret"},
@@ -91,6 +93,14 @@ type ignoreCommand struct {
 }
 
 type ignoreListCommand struct{}
+
+type joinCommand struct {
+	User string "uid"
+}
+
+type leaveCommand struct {
+	User string "uid"
+}
 
 type msgCommand struct {
 	to  string
