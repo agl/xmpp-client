@@ -2,6 +2,7 @@ package xlib
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"golang.org/x/crypto/ssh/terminal"
@@ -153,6 +154,27 @@ func (xio *XIOTerm) Resize() {
 	xio.term.SetSize(width, height)
 }
 
-func NewXIOTerm(term *terminal.Terminal) (x XIO) {
+func (xio *XIOTerm) Destroy() {
+	xio.term.SetBracketedPasteMode(false)
+}
+
+func NewXIOTerm() (x XIO) {
+	term := terminal.NewTerminal(os.Stdin, "")
+	term.SetBracketedPasteMode(true)
+
 	return &XIOTerm{term: term}
+}
+
+var xioterm_oldstate *terminal.State
+
+func XIOTerm_Init() {
+	var err error
+	xioterm_oldstate, err = terminal.MakeRaw(0)
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+func XIOTerm_Exit() {
+	terminal.Restore(0, xioterm_oldstate)
 }

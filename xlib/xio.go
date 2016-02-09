@@ -18,4 +18,5 @@ type XIO interface {
 	ReadLine() (line string, err error)
 	SetAutoCompleteCallback(f XIOAutoCompleteCallbackI)
 	Resize()
+	Destroy()
 }

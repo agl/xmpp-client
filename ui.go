@@ -24,7 +24,6 @@ import (
 
 	"github.com/agl/xmpp-client/xmpp"
 	"golang.org/x/crypto/otr"
-	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/proxy"
 
 	"github.com/agl/xmpp-client/caroots"
@@ -117,16 +116,12 @@ func (s *Session) readMessages(stanzaChan chan<- xmpp.Stanza) {
 func main() {
 	flag.Parse()
 
-	oldState, err := terminal.MakeRaw(0)
-	if err != nil {
-		panic(err.Error())
-	}
-	defer terminal.Restore(0, oldState)
-	term := terminal.NewTerminal(os.Stdin, "")
-	term.SetBracketedPasteMode(true)
-	defer term.SetBracketedPasteMode(false)
+	xlib.XIOTerm_Init()
+	defer xlib.XIOTerm_Exit()
 
-	xio := xlib.NewXIOTerm(term)
+	xio := xlib.NewXIOTerm()
+	defer xio.Destroy()
+
 	xio.Resize()
 
 	resizeChan := make(chan os.Signal)
