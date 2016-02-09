@@ -345,7 +345,7 @@ func parseCommand(commands []uiCommand, line []byte) (interface{}, string) {
 }
 
 type Input struct {
-	term                 *terminal.Terminal
+	xio                  XIO
 	commands             *priorityList
 	lastKeyWasCompletion bool
 
@@ -385,15 +385,15 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 
 	for {
 		if paste {
-			i.term.AutoCompleteCallback = nil
+			i.xio.SetAutoCompleteCallback(nil)
 		} else {
-			i.term.AutoCompleteCallback = autoCompleteCallback
+			i.xio.SetAutoCompleteCallback(autoCompleteCallback)
 		}
 
-		line, err := i.term.ReadLine()
+		line, err := i.xio.ReadLine()
 		if err == terminal.ErrPasteIndicator {
 			if len(i.lastTarget) == 0 {
-				alert(i.term, "Pasted line ignored. Send a message to someone to select the destination.")
+				i.xio.Alert("Pasted line ignored. Send a message to someone to select the destination.")
 			} else {
 				commandsChan <- msgCommand{i.lastTarget, string(line), nil}
 			}
@@ -418,7 +418,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 		if line[0] == '/' {
 			cmd, err := parseCommand(uiCommands, []byte(line))
 			if len(err) != 0 {
-				alert(i.term, err)
+				i.xio.Alert(err)
 				continue
 			}
 			// authCommand is turned into authQACommand with an
@@ -435,7 +435,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			}
 			if _, ok := cmd.(pasteCommand); ok {
 				if len(i.lastTarget) == 0 {
-					alert(i.term, "Can't enter paste mode without a destination. Send a message to someone to select the destination.")
+					i.xio.Alert("Can't enter paste mode without a destination. Send a message to someone to select the destination.")
 					continue
 				}
 				paste = true
@@ -447,7 +447,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			}
 			if _, ok := cmd.(closeCommand); ok {
 				i.lastTarget = ""
-				i.term.SetPrompt("> ")
+				i.xio.SetPrompt("> ")
 				continue
 			}
 			if cmd != nil {
@@ -470,7 +470,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 		i.lock.Unlock()
 
 		if len(i.lastTarget) == 0 {
-			warn(i.term, "Start typing a Jabber address and hit tab to send a message to someone")
+			i.xio.Warn("Start typing a Jabber address and hit tab to send a message to someone")
 			continue
 		}
 		commandsChan <- msgCommand{i.lastTarget, string(line), setPromptIsEncrypted}
@@ -488,17 +488,7 @@ func (input *Input) SetPromptForTarget(target string, isEncrypted bool) {
 		return
 	}
 
-	prompt := make([]byte, 0, len(target)+16)
-	if isEncrypted {
-		prompt = append(prompt, input.term.Escape.Green...)
-	} else {
-		prompt = append(prompt, input.term.Escape.Red...)
-	}
-
-	prompt = append(prompt, target...)
-	prompt = append(prompt, input.term.Escape.Reset...)
-	prompt = append(prompt, '>', ' ')
-	input.term.SetPrompt(string(prompt))
+	input.xio.SetPromptEnc(target, isEncrypted)
 }
 
 func (input *Input) showHelp() {
@@ -528,7 +518,7 @@ func (input *Input) showHelp() {
 			line += " "
 		}
 		line += cmd.desc
-		info(input.term, line)
+		input.xio.Info(line)
 	}
 }
 
