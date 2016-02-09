@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"testing"
+	"trident.li/xmpp-client/xlib"
 )
 
 var escapingTests = []string{
@@ -15,8 +16,8 @@ var escapingTests = []string{
 
 func TestEscaping(t *testing.T) {
 	for _, test := range escapingTests {
-		escaped := escapeNonASCII(test)
-		unescaped, err := unescapeNonASCII(escaped)
+		escaped := xlib.EscapeNonASCII(test)
+		unescaped, err := xlib.UnescapeNonASCII(escaped)
 		if err != nil {
 			t.Errorf("Error unescaping '%s' (from '%s')", escaped, test)
 			continue
@@ -30,7 +31,7 @@ func TestEscaping(t *testing.T) {
 func TestHTMLStripping(t *testing.T) {
 	raw := []byte("<hr>This is some <font color='green'>html</font><br />.")
 	exp := []byte("This is some html.")
-	res := stripHTML(raw)
+	res := xlib.StripHTML(raw)
 	if !bytes.Equal(res, exp) {
 		t.Errorf("HTML wasn't properly stripped: '%s' -> '%s' but expected '%s'", raw, res, exp)
 	}

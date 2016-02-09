@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/xml"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -26,8 +25,9 @@ import (
 	"github.com/agl/xmpp-client/xmpp"
 	"golang.org/x/crypto/otr"
 	"golang.org/x/crypto/ssh/terminal"
-	"golang.org/x/net/html"
 	"golang.org/x/net/proxy"
+
+	"github.com/agl/xmpp-client/xlib"
 )
 
 var configFile *string = flag.String("config-file", "", "Location of the config file")
@@ -56,27 +56,6 @@ func appendTerminalEscaped(out, msg []byte) []byte {
 		}
 	}
 	return out
-}
-
-func stripHTML(msg []byte) (out []byte) {
-	z := html.NewTokenizer(bytes.NewReader(msg))
-
-loop:
-	for {
-		tt := z.Next()
-		switch tt {
-		case html.TextToken:
-			out = append(out, z.Text()...)
-		case html.ErrorToken:
-			if err := z.Err(); err != nil && err != io.EOF {
-				out = msg
-				return
-			}
-			break loop
-		}
-	}
-
-	return
 }
 
 func terminalMessage(term *terminal.Terminal, color []byte, msg string, critical bool) {
@@ -981,7 +960,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	t := fmt.Sprintf("(%s) %s: ", timestamp, from)
 	line = append(line, []byte(t)...)
 	line = append(line, s.term.Escape.Reset...)
-	line = appendTerminalEscaped(line, stripHTML(out))
+	line = appendTerminalEscaped(line, xlib.StripHTML(out))
 	line = append(line, '\n')
 	if s.config.Bell {
 		line = append(line, '\a')
@@ -1154,7 +1133,7 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 	maxLen := 0
 	escapedJids := make([]string, len(roster))
 	for i, item := range roster {
-		escapedJids[i] = escapeNonASCII(item.Jid)
+		escapedJids[i] = xlib.EscapeNonASCII(item.Jid)
 		if l := len(escapedJids[i]); l > maxLen {
 			maxLen = l
 		}
@@ -1174,7 +1153,7 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 		}
 
 		if len(item.Name) > 0 {
-			line += "name:" + escapeNonASCII(item.Name)
+			line += "name:" + xlib.EscapeNonASCII(item.Name)
 			if len(item.Group) > 0 {
 				line += "\t"
 			}
@@ -1184,7 +1163,7 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 			if j > 0 {
 				line += "\t"
 			}
-			line += "group:" + escapeNonASCII(group)
+			line += "group:" + xlib.EscapeNonASCII(group)
 		}
 		line += "\n"
 		io.WriteString(f, line)
@@ -1195,71 +1174,6 @@ func (s *Session) editRoster(roster []xmpp.RosterEntry) {
 		fileName: fileName,
 		roster:   roster,
 	}
-}
-
-var hexTable = "0123456789abcdef"
-
-// escapeNonASCII replaces tabs and other non-printable characters with a
-// "\x01" form of hex escaping. It works on a byte-by-byte basis.
-func escapeNonASCII(in string) string {
-	escapes := 0
-	for i := 0; i < len(in); i++ {
-		if in[i] < 32 || in[i] > 126 || in[i] == '\\' {
-			escapes++
-		}
-	}
-
-	if escapes == 0 {
-		return in
-	}
-
-	out := make([]byte, 0, len(in)+3*escapes)
-	for i := 0; i < len(in); i++ {
-		if in[i] < 32 || in[i] > 126 || in[i] == '\\' {
-			out = append(out, '\\', 'x', hexTable[in[i]>>4], hexTable[in[i]&15])
-		} else {
-			out = append(out, in[i])
-		}
-	}
-
-	return string(out)
-}
-
-// unescapeNonASCII undoes the transformation of escapeNonASCII.
-func unescapeNonASCII(in string) (string, error) {
-	needsUnescaping := false
-	for i := 0; i < len(in); i++ {
-		if in[i] == '\\' {
-			needsUnescaping = true
-			break
-		}
-	}
-
-	if !needsUnescaping {
-		return in, nil
-	}
-
-	out := make([]byte, 0, len(in))
-	for i := 0; i < len(in); i++ {
-		if in[i] == '\\' {
-			if len(in) <= i+3 {
-				return "", errors.New("truncated escape sequence at end: " + in)
-			}
-			if in[i+1] != 'x' {
-				return "", errors.New("escape sequence didn't start with \\x in: " + in)
-			}
-			v, err := strconv.ParseUint(in[i+2:i+4], 16, 8)
-			if err != nil {
-				return "", errors.New("failed to parse value in '" + in + "': " + err.Error())
-			}
-			out = append(out, byte(v))
-			i += 3
-		} else {
-			out = append(out, in[i])
-		}
-	}
-
-	return string(out), nil
 }
 
 func (s *Session) loadEditedRoster(edit rosterEdit) {
@@ -1291,7 +1205,7 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 		var entry xmpp.RosterEntry
 		var err error
 
-		if entry.Jid, err = unescapeNonASCII(string(string(parts[0]))); err != nil {
+		if entry.Jid, err = xlib.UnescapeNonASCII(string(string(parts[0]))); err != nil {
 			alert(s.term, fmt.Sprintf("Failed to parse JID on line %d: %s", i+1, err))
 			return false
 		}
@@ -1307,7 +1221,7 @@ func (s *Session) processEditedRoster(edit *rosterEdit) bool {
 			}
 
 			typ := string(part[:pos])
-			value, err := unescapeNonASCII(string(part[pos+1:]))
+			value, err := xlib.UnescapeNonASCII(string(part[pos+1:]))
 			if err != nil {
 				alert(s.term, fmt.Sprintf("Failed to unescape item on line %d: %s", i+1, err))
 				return false
