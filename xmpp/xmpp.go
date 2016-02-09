@@ -383,7 +383,7 @@ func certName(cert *x509.Certificate) string {
 func Resolve(domain string) (host string, port uint16, err error) {
 	_, addrs, err := net.LookupSRV("xmpp-client", "tcp", domain)
 	if err != nil {
-		return "", 0, err
+		return domain, 5222, nil
 	}
 	if len(addrs) == 0 {
 		return "", 0, errors.New("xmpp: no SRV records found for " + domain)
