@@ -2,6 +2,7 @@ package xlib
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agl/xmpp-client/caroots"
 	"github.com/agl/xmpp-client/xmpp"
 	"golang.org/x/crypto/otr"
 )
@@ -790,6 +792,21 @@ func NewSession(config *Config, xio XIO) (s *Session) {
 }
 
 func (s *Session) Dial(addr, user, domain, password string, cfg *xmpp.Config) (err error) {
+
+	if domain == "jabber.ccc.de" {
+		// jabber.ccc.de uses CACert but distros are removing that root
+		// certificate.
+		roots := x509.NewCertPool()
+		caCertRoot, err := x509.ParseCertificate(caroots.CaCertRootDER)
+		if err == nil {
+			s.Xio.Alert("Temporarily trusting only CACert root for CCC Jabber server")
+			roots.AddCert(caCertRoot)
+			cfg.TLSConfig.RootCAs = roots
+		} else {
+			s.Xio.Alert("Tried to add CACert root for jabber.ccc.de but failed: " + err.Error())
+		}
+	}
+
 	s.Conn, err = xmpp.Dial(addr, user, domain, password, cfg)
 	if err != nil {
 		s.Xio.Alert("Failed to connect to XMPP server: " + err.Error())

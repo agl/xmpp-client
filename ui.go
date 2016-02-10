@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	"golang.org/x/crypto/otr"
 	"golang.org/x/net/proxy"
 
-	"github.com/agl/xmpp-client/caroots"
 	"github.com/agl/xmpp-client/xlib"
 )
 
@@ -156,20 +154,6 @@ func main() {
 				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 			},
 		},
-	}
-
-	if domain == "jabber.ccc.de" {
-		// jabber.ccc.de uses CACert but distros are removing that root
-		// certificate.
-		roots := x509.NewCertPool()
-		caCertRoot, err := x509.ParseCertificate(caroots.CaCertRootDER)
-		if err == nil {
-			xio.Alert("Temporarily trusting only CACert root for CCC Jabber server")
-			roots.AddCert(caCertRoot)
-			xmppConfig.TLSConfig.RootCAs = roots
-		} else {
-			xio.Alert("Tried to add CACert root for jabber.ccc.de but failed: " + err.Error())
-		}
 	}
 
 	if len(config.RawLogFile) > 0 {
