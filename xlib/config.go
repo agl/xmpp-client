@@ -1,4 +1,4 @@
-package main
+package xlib
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agl/xmpp-client/xlib"
 	"github.com/agl/xmpp-client/xmpp"
 	"golang.org/x/crypto/otr"
 	"golang.org/x/net/proxy"
@@ -115,12 +114,16 @@ func (c *Config) ShouldEncryptTo(uid string) bool {
 	return false
 }
 
+func NewConfig(filename string) (c *Config) {
+	return &Config{filename: filename}
+}
+
 func isYes(s string) bool {
 	lower := strings.ToLower(s)
 	return lower == "yes" || lower == "y"
 }
 
-func enroll(config *Config, xio xlib.XIO) bool {
+func Enroll(config *Config, xio XIO) bool {
 	var err error
 	xio.Warn("Enrolling new config file")
 

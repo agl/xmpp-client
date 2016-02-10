@@ -5,22 +5,18 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
-	"encoding/xml"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/agl/xmpp-client/xmpp"
 	"golang.org/x/crypto/otr"
@@ -32,86 +28,6 @@ import (
 
 var configFile *string = flag.String("config-file", "", "Location of the config file")
 var createAccount *bool = flag.Bool("create", false, "If true, attempt to create account")
-
-// OTRWhitespaceTagStart may be appended to plaintext messages to signal to the
-// remote client that we support OTR. It should be followed by one of the
-// version specific tags, below. See "Tagged plaintext messages" in
-// http://www.cypherpunks.ca/otr/Protocol-v3-4.0.0.html.
-var OTRWhitespaceTagStart = []byte("\x20\x09\x20\x20\x09\x09\x09\x09\x20\x09\x20\x09\x20\x09\x20\x20")
-
-var OTRWhiteSpaceTagV1 = []byte("\x20\x09\x20\x09\x20\x20\x09\x20")
-var OTRWhiteSpaceTagV2 = []byte("\x20\x20\x09\x09\x20\x20\x09\x20")
-var OTRWhiteSpaceTagV3 = []byte("\x20\x20\x09\x09\x20\x20\x09\x09")
-
-var OTRWhitespaceTag = append(OTRWhitespaceTagStart, OTRWhiteSpaceTagV2...)
-
-type Session struct {
-	account string
-	conn    *xmpp.Conn
-	xio     xlib.XIO
-	roster  []xmpp.RosterEntry
-	input   Input
-	// conversations maps from a JID (without the resource) to an OTR
-	// conversation. (Note that unencrypted conversations also pass through
-	// OTR.)
-	conversations map[string]*otr.Conversation
-	// knownStates maps from a JID (without the resource) to the last known
-	// presence state of that contact. It's used to deduping presence
-	// notifications.
-	knownStates map[string]string
-	privateKey  *otr.PrivateKey
-	config      *Config
-	// lastMessageFrom is the JID (without the resource) of the contact
-	// that we last received a message from.
-	lastMessageFrom string
-	// timeouts maps from Cookies (from outstanding requests) to the
-	// absolute time when that request should timeout.
-	timeouts map[xmpp.Cookie]time.Time
-	// pendingRosterEdit, if non-nil, contains information about a pending
-	// roster edit operation.
-	pendingRosterEdit *rosterEdit
-	// pendingRosterChan is the channel over which roster edit information
-	// is received.
-	pendingRosterChan chan *rosterEdit
-	// pendingSubscribes maps JID with pending subscription requests to the
-	// ID if the iq for the reply.
-	pendingSubscribes map[string]string
-	// lastActionTime is the time at which the user last entered a command,
-	// or was last notified.
-	lastActionTime time.Time
-	// ignored is a list of users from whom messages are currently being
-	// ignored, e.g. due to doing `/ignore soandso@jabber.foo`
-	ignored map[string]struct{}
-}
-
-// rosterEdit contains information about a pending roster edit. Roster edits
-// occur by writing the roster to a file and inviting the user to edit the
-// file.
-type rosterEdit struct {
-	// fileName is the name of the file containing the roster information.
-	fileName string
-	// roster contains the state of the roster at the time of writing the
-	// file. It's what we diff against when reading the file.
-	roster []xmpp.RosterEntry
-	// isComplete is true if this is the result of reading an edited
-	// roster, rather than a report that the file has been written.
-	isComplete bool
-	// contents contains the edited roster, if isComplete is true.
-	contents []byte
-}
-
-func (s *Session) readMessages(stanzaChan chan<- xmpp.Stanza) {
-	defer close(stanzaChan)
-
-	for {
-		stanza, err := s.conn.Next()
-		if err != nil {
-			s.xio.Alert(err.Error())
-			return
-		}
-		stanzaChan <- stanza
-	}
-}
 
 func main() {
 	flag.Parse()
@@ -146,14 +62,13 @@ func main() {
 		*configFile = filepath.Join(homeDir, ".xmpp-client")
 	}
 
-	config, err := ParseConfig(*configFile)
+	config, err := xlib.ParseConfig(*configFile)
 	if err != nil {
 		xio.Alert("Failed to parse config file: " + err.Error())
-		config = new(Config)
-		if !enroll(config, xio) {
+		config = xlib.NewConfig(*configFile)
+		if !xlib.Enroll(config, xio) {
 			return
 		}
-		config.filename = *configFile
 		config.Save()
 	}
 
@@ -297,139 +212,55 @@ func main() {
 		}
 	}
 
-	conn, err := xmpp.Dial(addr, user, domain, password, xmppConfig)
+	s := xlib.NewSession(config, xio)
+
+	err = s.Dial(addr, user, domain, password, xmppConfig)
 	if err != nil {
 		xio.Alert("Failed to connect to XMPP server: " + err.Error())
 		return
 	}
 
-	s := Session{
-		account:           config.Account,
-		conn:              conn,
-		xio:               xio,
-		conversations:     make(map[string]*otr.Conversation),
-		knownStates:       make(map[string]string),
-		privateKey:        new(otr.PrivateKey),
-		config:            config,
-		pendingRosterChan: make(chan *rosterEdit),
-		pendingSubscribes: make(map[string]string),
-		lastActionTime:    time.Now(),
-		// ignored contains UIDs that are currently being ignored.
-		ignored: make(map[string]struct{}),
-	}
-	xio.Info("Fetching roster")
+	s.SignalPresence("")
 
-	//var rosterReply chan xmpp.Stanza
-	rosterReply, _, err := s.conn.RequestRoster()
-	if err != nil {
-		xio.Alert("Failed to request roster: " + err.Error())
-		return
-	}
+	input := NewInput(xio)
 
-	conn.SignalPresence("")
-
-	s.input = Input{
-		xio:         xio,
-		uidComplete: new(priorityList),
-	}
 	commandChan := make(chan interface{})
-	go s.input.ProcessCommands(commandChan)
+	go input.ProcessCommands(s, commandChan)
 
 	stanzaChan := make(chan xmpp.Stanza)
-	go s.readMessages(stanzaChan)
+	go s.ReadMessages(stanzaChan)
 
-	s.privateKey.Parse(config.PrivateKey)
-	s.timeouts = make(map[xmpp.Cookie]time.Time)
+	xio.Info(fmt.Sprintf("Your fingerprint is %x", s.GetFingerprint()))
 
-	xio.Info(fmt.Sprintf("Your fingerprint is %x", s.privateKey.Fingerprint()))
-
-	ticker := time.NewTicker(1 * time.Second)
+	go s.Handle()
 
 MainLoop:
 	for {
 		select {
-		case now := <-ticker.C:
-			haveExpired := false
-			for _, expiry := range s.timeouts {
-				if now.After(expiry) {
-					haveExpired = true
-					break
-				}
-			}
-			if !haveExpired {
-				continue
-			}
-
-			newTimeouts := make(map[xmpp.Cookie]time.Time)
-			for cookie, expiry := range s.timeouts {
-				if now.After(expiry) {
-					s.conn.Cancel(cookie)
-				} else {
-					newTimeouts[cookie] = expiry
-				}
-			}
-			s.timeouts = newTimeouts
-
-		case edit := <-s.pendingRosterChan:
-			if !edit.isComplete {
-				s.xio.Info("Please edit " + edit.fileName + " and run /rostereditdone when complete")
-				s.pendingRosterEdit = edit
-				continue
-			}
-			if s.processEditedRoster(edit) {
-				s.pendingRosterEdit = nil
-			} else {
-				s.xio.Alert("Please reedit file and run /rostereditdone again")
-			}
-
-		case rosterStanza, ok := <-rosterReply:
-			if !ok {
-				s.xio.Alert("Failed to read roster: " + err.Error())
-				return
-			}
-			if s.roster, err = xmpp.ParseRoster(rosterStanza); err != nil {
-				s.xio.Alert("Failed to parse roster: " + err.Error())
-				return
-			}
-			for _, entry := range s.roster {
-				s.input.AddUser(entry.Jid)
-			}
-			s.xio.Info("Roster received")
-
 		case cmd, ok := <-commandChan:
 			if !ok {
 				xio.Warn("Exiting because command channel closed")
 				break MainLoop
 			}
-			s.lastActionTime = time.Now()
+			s.LastAction()
 			switch cmd := cmd.(type) {
 			case quitCommand:
-				for to, conversation := range s.conversations {
-					msgs := conversation.End()
-					for _, msg := range msgs {
-						s.conn.Send(to, string(msg))
-					}
-				}
+				s.Quit()
 				break MainLoop
 			case versionCommand:
-				replyChan, cookie, err := s.conn.SendIQ(cmd.User, "get", xmpp.VersionQuery{})
-				if err != nil {
-					s.xio.Alert("Error sending version request: " + err.Error())
-					continue
-				}
-				s.timeouts[cookie] = time.Now().Add(5 * time.Second)
-				go s.awaitVersionReply(replyChan, cmd.User)
+				s.GetVersion(cmd.User)
 			case rosterCommand:
-				s.xio.Info("Current roster:")
+				s.Xio.Info("Current roster:")
 				maxLen := 0
-				for _, item := range s.roster {
+				roster := s.GetRoster()
+				for _, item := range roster {
 					if maxLen < len(item.Jid) {
 						maxLen = len(item.Jid)
 					}
 				}
 
-				for _, item := range s.roster {
-					state, ok := s.knownStates[item.Jid]
+				for _, item := range roster {
+					state, ok := s.GetState(item.Jid)
 
 					line := ""
 					if ok {
@@ -449,144 +280,56 @@ MainLoop:
 					if ok {
 						line += "\t" + state
 					}
-					s.xio.Info(line)
+					s.Xio.Info(line)
 				}
 			case rosterEditCommand:
-				if s.pendingRosterEdit != nil {
-					s.xio.Warn("Aborting previous roster edit")
-					s.pendingRosterEdit = nil
-				}
-				rosterCopy := make([]xmpp.RosterEntry, len(s.roster))
-				copy(rosterCopy, s.roster)
-				go s.editRoster(rosterCopy)
+				s.DoEditRoster()
 			case rosterEditDoneCommand:
-				if s.pendingRosterEdit == nil {
-					s.xio.Warn("No roster edit in progress. Use /rosteredit to start one")
-					continue
-				}
-				go s.loadEditedRoster(*s.pendingRosterEdit)
+				s.DoEditDoneRoster()
 			case toggleStatusUpdatesCommand:
-				s.config.HideStatusUpdates = !s.config.HideStatusUpdates
-				s.config.Save()
-				// Tell the user the current state of the statuses
-				if s.config.HideStatusUpdates {
-					s.xio.Info("Status updates disabled")
-				} else {
-					s.xio.Info("Status updates enabled")
-				}
+				s.ToggleStatusUpdates()
 			case confirmCommand:
-				s.handleConfirmOrDeny(cmd.User, true /* confirm */)
+				s.HandleConfirmOrDeny(cmd.User, true /* confirm */)
 			case denyCommand:
-				s.handleConfirmOrDeny(cmd.User, false /* deny */)
+				s.HandleConfirmOrDeny(cmd.User, false /* deny */)
 			case addCommand:
-				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
+				s.SendPresence(cmd.User, "subscribe", "" /* generate id */)
 			case joinCommand:
-				s.xio.Info(fmt.Sprintf("Warning: OTR is ***NOT SUPPORTED*** for Multi-User-Chats"))
-				s.conn.JoinMUC(cmd.User, "", "")
+				s.Xio.Info(fmt.Sprintf("Warning: OTR is ***NOT SUPPORTED*** for Multi-User-Chats"))
+				s.JoinMUC(cmd.User, "", "")
 			case leaveCommand:
-				s.conn.LeaveMUC(cmd.User)
+				s.LeaveMUC(cmd.User)
 
 			case msgCommand:
-				conversation, ok := s.conversations[cmd.to]
-				isEncrypted := ok && conversation.IsEncrypted()
-				if cmd.setPromptIsEncrypted != nil {
-					cmd.setPromptIsEncrypted <- isEncrypted
-				}
-				if !isEncrypted && config.ShouldEncryptTo(cmd.to) {
-					s.xio.Warn(fmt.Sprintf("Did not send: no encryption established with %s", cmd.to))
-					continue
-				}
-				var msgs [][]byte
-				message := []byte(cmd.msg)
-				// Automatically tag all outgoing plaintext
-				// messages with a whitespace tag that
-				// indicates that we support OTR.
-				if config.OTRAutoAppendTag &&
-					!bytes.Contains(message, []byte("?OTR")) &&
-					(!ok || !conversation.IsEncrypted()) {
-					message = append(message, OTRWhitespaceTag...)
-				}
-				if ok {
-					var err error
-					msgs, err = conversation.Send(message)
-					if err != nil {
-						s.xio.Alert(err.Error())
-						break
-					}
-				} else {
-					msgs = [][]byte{[]byte(message)}
-				}
+				s.Msg(cmd.to, cmd.msg, cmd.setPromptIsEncrypted)
 
-				for _, message := range msgs {
-					s.conn.Send(cmd.to, string(message))
-				}
 			case otrCommand:
-				s.conn.Send(string(cmd.User), otr.QueryMessage)
+				s.Send(string(cmd.User), otr.QueryMessage)
 			case otrInfoCommand:
-				xio.Info(fmt.Sprintf("Your OTR fingerprint is %x", s.privateKey.Fingerprint()))
-				for to, conversation := range s.conversations {
-					if conversation.IsEncrypted() {
-						s.xio.Info(fmt.Sprintf("Secure session with %s underway:", to))
-						printConversationInfo(&s, to, conversation)
-					}
-				}
+				xio.Info(fmt.Sprintf("Your OTR fingerprint is %x", s.GetFingerprint()))
+				s.PrintConversations()
 			case endOTRCommand:
-				to := string(cmd.User)
-				conversation, ok := s.conversations[to]
-				if !ok {
-					s.xio.Alert("No secure session established")
-					break
-				}
-				msgs := conversation.End()
-				for _, msg := range msgs {
-					s.conn.Send(to, string(msg))
-				}
-				s.input.SetPromptForTarget(cmd.User, false)
-				s.xio.Warn("OTR conversation ended with " + cmd.User)
+				s.EndConversation(cmd.User)
 			case authQACommand:
-				to := string(cmd.User)
-				conversation, ok := s.conversations[to]
-				if !ok {
-					s.xio.Alert("Can't authenticate without a secure conversation established")
-					break
-				}
-				msgs, err := conversation.Authenticate(cmd.Question, []byte(cmd.Secret))
-				if err != nil {
-					s.xio.Alert("Error while starting authentication with " + to + ": " + err.Error())
-				}
-				for _, msg := range msgs {
-					s.conn.Send(to, string(msg))
-				}
+				s.AuthQACommand(cmd.User, cmd.Question, cmd.Secret)
 			case authOobCommand:
-				fpr, err := hex.DecodeString(cmd.Fingerprint)
-				if err != nil {
-					s.xio.Alert(fmt.Sprintf("Invalid fingerprint %s - not authenticated", cmd.Fingerprint))
-					break
-				}
-				existing := s.config.UserIdForFingerprint(fpr)
-				if len(existing) != 0 {
-					s.xio.Alert(fmt.Sprintf("Fingerprint %s already belongs to %s", cmd.Fingerprint, existing))
-					break
-				}
-				s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: cmd.User})
-				s.config.Save()
-				s.xio.Info(fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User))
+				s.AuthOOBCommand(cmd.User, cmd.Fingerprint)
 			case awayCommand:
-				s.conn.SignalPresence("away")
+				s.SignalPresence("away")
 			case chatCommand:
-				s.conn.SignalPresence("chat")
+				s.SignalPresence("chat")
 			case dndCommand:
-				s.conn.SignalPresence("dnd")
+				s.SignalPresence("dnd")
 			case xaCommand:
-				s.conn.SignalPresence("xa")
+				s.SignalPresence("xa")
 			case onlineCommand:
-				s.conn.SignalPresence("")
+				s.SignalPresence("")
 			case ignoreCommand:
-				s.ignoreUser(cmd.User)
+				s.IgnoreUser(cmd.User)
 			case unignoreCommand:
-				s.unignoreUser(cmd.User)
+				s.UnignoreUser(cmd.User)
 			case ignoreListCommand:
-				s.ignoreList()
+				s.IgnoreList()
 			}
 		case rawStanza, ok := <-stanzaChan:
 			if !ok {
@@ -595,21 +338,21 @@ MainLoop:
 			}
 			switch stanza := rawStanza.Value.(type) {
 			case *xmpp.ClientMessage:
-				s.processClientMessage(stanza)
+				s.ProcessClientMessage(stanza)
 			case *xmpp.ClientPresence:
-				s.processPresence(stanza)
+				s.ProcessPresence(stanza)
 			case *xmpp.ClientIQ:
 				if stanza.Type != "get" && stanza.Type != "set" {
 					continue
 				}
-				reply := s.processIQ(stanza)
+				reply := s.ProcessIQ(stanza)
 				if reply == nil {
 					reply = xmpp.ErrorReply{
 						Type:  "cancel",
 						Error: xmpp.ErrorBadRequest{},
 					}
 				}
-				if err := s.conn.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
+				if err := s.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
 					xio.Alert("Failed to send IQ message: " + err.Error())
 				}
 			case *xmpp.StreamError:
@@ -628,634 +371,6 @@ MainLoop:
 	}
 
 	os.Stdout.Write([]byte("\n"))
-}
-
-func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
-	buf := bytes.NewBuffer(stanza.Query)
-	parser := xml.NewDecoder(buf)
-	token, _ := parser.Token()
-	if token == nil {
-		return nil
-	}
-	startElem, ok := token.(xml.StartElement)
-	if !ok {
-		return nil
-	}
-	switch startElem.Name.Space + " " + startElem.Name.Local {
-	case "http://jabber.org/protocol/disco#info query":
-		return xmpp.DiscoveryReply{
-			Identities: []xmpp.DiscoveryIdentity{
-				{
-					Category: "client",
-					Type:     "pc",
-					Name:     s.config.Account,
-				},
-			},
-		}
-	case "jabber:iq:version query":
-		return xmpp.VersionReply{
-			Name:    "testing",
-			Version: "version",
-			OS:      "none",
-		}
-	case "jabber:iq:roster query":
-		if len(stanza.From) > 0 && stanza.From != s.account {
-			s.xio.Warn("Ignoring roster IQ from bad address: " + stanza.From)
-			return nil
-		}
-		var roster xmpp.Roster
-		if err := xml.NewDecoder(bytes.NewBuffer(stanza.Query)).Decode(&roster); err != nil || len(roster.Item) == 0 {
-			s.xio.Warn("Failed to parse roster push IQ")
-			return nil
-		}
-		entry := roster.Item[0]
-
-		if entry.Subscription == "remove" {
-			for i, rosterEntry := range s.roster {
-				if rosterEntry.Jid == entry.Jid {
-					copy(s.roster[i:], s.roster[i+1:])
-					s.roster = s.roster[:len(s.roster)-1]
-				}
-			}
-			return xmpp.EmptyReply{}
-		}
-
-		found := false
-		for i, rosterEntry := range s.roster {
-			if rosterEntry.Jid == entry.Jid {
-				s.roster[i] = entry
-				found = true
-				break
-			}
-		}
-		if !found {
-			s.roster = append(s.roster, entry)
-			s.input.AddUser(entry.Jid)
-		}
-		return xmpp.EmptyReply{}
-	default:
-		s.xio.Info("Unknown IQ: " + startElem.Name.Space + " " + startElem.Name.Local)
-	}
-
-	return nil
-}
-
-func (s *Session) handleConfirmOrDeny(jid string, isConfirm bool) {
-	id, ok := s.pendingSubscribes[jid]
-	if !ok {
-		s.xio.Warn("No pending subscription from " + jid)
-		return
-	}
-	delete(s.pendingSubscribes, id)
-	typ := "unsubscribed"
-	if isConfirm {
-		typ = "subscribed"
-	}
-	if err := s.conn.SendPresence(jid, typ, id); err != nil {
-		s.xio.Alert("Error sending presence stanza: " + err.Error())
-	}
-}
-
-func (s *Session) ignoreUser(uid string) {
-	if _, ok := s.ignored[uid]; ok {
-		s.input.xio.Info("Already ignoring " + uid)
-		return
-	}
-
-	s.input.lock.Lock()
-	defer s.input.lock.Unlock()
-
-	hasContact := false
-
-	for _, existingUid := range s.input.uids {
-		if existingUid == uid {
-			hasContact = true
-		}
-	}
-
-	if hasContact {
-		s.input.xio.Info(fmt.Sprintf("Ignoring messages from %s for the duration of this session", uid))
-	} else {
-		s.input.xio.Warn(fmt.Sprintf("%s isn't in your contact list... ignoring anyway for the duration of this session!", uid))
-	}
-
-	s.ignored[uid] = struct{}{}
-	s.input.xio.Info(fmt.Sprintf("Use '/unignore %s' to continue receiving messages from them.", uid))
-}
-
-func (s *Session) unignoreUser(uid string) {
-	if _, ok := s.ignored[uid]; !ok {
-		s.input.xio.Info("No ignore registered for " + uid)
-		return
-	}
-
-	s.input.xio.Info("No longer ignoring messages from " + uid)
-	delete(s.ignored, uid)
-}
-
-func (s *Session) ignoreList() {
-	var ignored []string
-
-	for ignoredUser, _ := range s.ignored {
-		ignored = append(ignored, ignoredUser)
-	}
-	sort.Strings(ignored)
-
-	s.input.xio.Info("Ignoring messages from these users for the duration of the session:")
-	for _, ignoredUser := range ignored {
-		s.xio.Info("  " + ignoredUser)
-	}
-}
-
-func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
-	from := xmpp.RemoveResourceFromJid(stanza.From)
-
-	if _, ok := s.ignored[from]; ok {
-		return
-	}
-
-	if stanza.Type == "error" {
-		s.xio.Alert("Error reported from " + from + ": " + stanza.Body)
-		return
-	}
-
-	conversation, ok := s.conversations[from]
-	if !ok {
-		conversation = new(otr.Conversation)
-		conversation.PrivateKey = s.privateKey
-		s.conversations[from] = conversation
-	}
-
-	out, encrypted, change, toSend, err := conversation.Receive([]byte(stanza.Body))
-	if err != nil {
-		s.xio.Alert("While processing message from " + from + ": " + err.Error())
-		s.conn.Send(stanza.From, otr.ErrorPrefix+"Error processing message")
-	}
-	for _, msg := range toSend {
-		s.conn.Send(stanza.From, string(msg))
-	}
-	switch change {
-	case otr.NewKeys:
-		s.input.SetPromptForTarget(from, true)
-		s.xio.Info(fmt.Sprintf("New OTR session with %s established", from))
-		printConversationInfo(s, from, conversation)
-	case otr.ConversationEnded:
-		s.input.SetPromptForTarget(from, false)
-		// This is probably unsafe without a policy that _forces_ crypto to
-		// _everyone_ by default and refuses plaintext. Users might not notice
-		// their buddy has ended a session, which they have also ended, and they
-		// might send a plain text message. So we should ensure they _want_ this
-		// feature and have set it as an explicit preference.
-		if s.config.OTRAutoTearDown {
-			if s.conversations[from] == nil {
-				s.xio.Alert(fmt.Sprintf("No secure session established; unable to automatically tear down OTR conversation with %s.", from))
-				break
-			} else {
-				s.xio.Info(fmt.Sprintf("%s has ended the secure conversation.", from))
-				msgs := conversation.End()
-				for _, msg := range msgs {
-					s.conn.Send(from, string(msg))
-				}
-				s.xio.Info(fmt.Sprintf("Secure session with %s has been automatically ended. Messages will be sent in the clear until another OTR session is established.", from))
-			}
-		} else {
-			s.xio.Info(fmt.Sprintf("%s has ended the secure conversation. You should do likewise with /otr-end %s", from, from))
-		}
-	case otr.SMPSecretNeeded:
-		s.xio.Info(fmt.Sprintf("%s is attempting to authenticate. Please supply mutual shared secret with /otr-auth user secret", from))
-		if question := conversation.SMPQuestion(); len(question) > 0 {
-			s.xio.Info(fmt.Sprintf("%s asks: %s", from, question))
-		}
-	case otr.SMPComplete:
-		s.xio.Info(fmt.Sprintf("Authentication with %s successful", from))
-		fpr := conversation.TheirPublicKey.Fingerprint()
-		if len(s.config.UserIdForFingerprint(fpr)) == 0 {
-			s.config.KnownFingerprints = append(s.config.KnownFingerprints, KnownFingerprint{fingerprint: fpr, UserId: from})
-		}
-		s.config.Save()
-	case otr.SMPFailed:
-		s.xio.Alert(fmt.Sprintf("Authentication with %s failed", from))
-	}
-
-	if len(out) == 0 {
-		return
-	}
-
-	detectedOTRVersion := 0
-	// We don't need to alert about tags encoded inside of messages that are
-	// already encrypted with OTR
-	whitespaceTagLength := len(OTRWhitespaceTagStart) + len(OTRWhiteSpaceTagV1)
-	if !encrypted && len(out) >= whitespaceTagLength {
-		whitespaceTag := out[len(out)-whitespaceTagLength:]
-		if bytes.Equal(whitespaceTag[:len(OTRWhitespaceTagStart)], OTRWhitespaceTagStart) {
-			if bytes.HasSuffix(whitespaceTag, OTRWhiteSpaceTagV1) {
-				s.xio.Info(fmt.Sprintf("%s appears to support OTRv1. You should encourage them to upgrade their OTR client!", from))
-				detectedOTRVersion = 1
-			}
-			if bytes.HasSuffix(whitespaceTag, OTRWhiteSpaceTagV2) {
-				detectedOTRVersion = 2
-			}
-			if bytes.HasSuffix(whitespaceTag, OTRWhiteSpaceTagV3) {
-				detectedOTRVersion = 3
-			}
-		}
-	}
-
-	// MultiParty OTR does not exist yet unfortunately
-	// Thus do not note we are going to try it
-	if stanza.Type == "groupchat" {
-		detectedOTRVersion = 0
-	}
-
-	if s.config.OTRAutoStartSession && detectedOTRVersion >= 2 {
-		s.xio.Info(fmt.Sprintf("%s appears to support OTRv%d. We are attempting to start an OTR session with them.", from, detectedOTRVersion))
-		s.conn.Send(from, otr.QueryMessage)
-	} else if s.config.OTRAutoStartSession && detectedOTRVersion == 1 {
-		s.xio.Info(fmt.Sprintf("%s appears to support OTRv%d. You should encourage them to upgrade their OTR client!", from, detectedOTRVersion))
-	}
-
-	var timestamp string
-	var messageTime time.Time
-	if stanza.Delay != nil && len(stanza.Delay.Stamp) > 0 {
-		// An XEP-0203 Delayed Delivery <delay/> element exists for
-		// this message, meaning that someone sent it while we were
-		// offline. Let's show the timestamp for when the message was
-		// sent, rather than time.Now().
-		messageTime, err = time.Parse(time.RFC3339, stanza.Delay.Stamp)
-		if err != nil {
-			s.xio.Alert("Can not parse Delayed Delivery timestamp, using quoted string instead.")
-			timestamp = fmt.Sprintf("%q", stanza.Delay.Stamp)
-		}
-	} else {
-		messageTime = time.Now()
-	}
-	if len(timestamp) == 0 {
-		timestamp = messageTime.Format(time.Stamp)
-	}
-
-	s.xio.Message(timestamp, from, out, encrypted, s.config.Bell)
-	s.maybeNotify()
-}
-
-func (s *Session) maybeNotify() {
-	now := time.Now()
-	idleThreshold := s.config.IdleSecondsBeforeNotification
-	if idleThreshold == 0 {
-		idleThreshold = 60
-	}
-	notifyTime := s.lastActionTime.Add(time.Duration(idleThreshold) * time.Second)
-	if now.Before(notifyTime) {
-		return
-	}
-
-	s.lastActionTime = now
-	if len(s.config.NotifyCommand) == 0 {
-		return
-	}
-
-	cmd := exec.Command(s.config.NotifyCommand[0], s.config.NotifyCommand[1:]...)
-	go func() {
-		if err := cmd.Run(); err != nil {
-			s.xio.Alert("Failed to run notify command: " + err.Error())
-		}
-	}()
-}
-
-func isAwayStatus(status string) bool {
-	switch status {
-	case "xa", "away":
-		return true
-	}
-	return false
-}
-
-func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
-	gone := false
-
-	switch stanza.Type {
-	case "subscribe":
-		// This is a subscription request
-		jid := xmpp.RemoveResourceFromJid(stanza.From)
-		s.xio.Info(jid + " wishes to see when you're online. Use '/confirm " + jid + "' to confirm (or likewise with /deny to decline)")
-		s.pendingSubscribes[jid] = stanza.Id
-		s.input.AddUser(jid)
-		return
-	case "unavailable":
-		gone = true
-	case "":
-		break
-	default:
-		return
-	}
-
-	from := xmpp.RemoveResourceFromJid(stanza.From)
-
-	if gone {
-		if _, ok := s.knownStates[from]; !ok {
-			// They've gone, but we never knew they were online.
-			return
-		}
-		delete(s.knownStates, from)
-	} else {
-		if _, ok := s.knownStates[from]; !ok && isAwayStatus(stanza.Show) {
-			// Skip people who are initially away.
-			return
-		}
-
-		if lastState, ok := s.knownStates[from]; ok && lastState == stanza.Show {
-			// No change. Ignore.
-			return
-		}
-		s.knownStates[from] = stanza.Show
-	}
-
-	if !s.config.HideStatusUpdates {
-		timestamp := time.Now().Format(time.Kitchen)
-		s.xio.StatusUpdate(timestamp, from, stanza.Show, stanza.Status, gone)
-	}
-}
-
-func (s *Session) awaitVersionReply(ch <-chan xmpp.Stanza, user string) {
-	stanza, ok := <-ch
-	if !ok {
-		s.xio.Warn("Version request to " + user + " timed out")
-		return
-	}
-	reply, ok := stanza.Value.(*xmpp.ClientIQ)
-	if !ok {
-		s.xio.Warn("Version request to " + user + " resulted in bad reply type")
-		return
-	}
-
-	if reply.Type == "error" {
-		s.xio.Warn("Version request to " + user + " resulted in XMPP error")
-		return
-	} else if reply.Type != "result" {
-		s.xio.Warn("Version request to " + user + " resulted in response with unknown type: " + reply.Type)
-		return
-	}
-
-	buf := bytes.NewBuffer(reply.Query)
-	var versionReply xmpp.VersionReply
-	if err := xml.NewDecoder(buf).Decode(&versionReply); err != nil {
-		s.xio.Warn("Failed to parse version reply from " + user + ": " + err.Error())
-		return
-	}
-
-	s.xio.Info(fmt.Sprintf("Version reply from %s: %#v", user, versionReply))
-}
-
-// editRoster runs in a goroutine and writes the roster to a file that the user
-// can edit.
-func (s *Session) editRoster(roster []xmpp.RosterEntry) {
-	// In case the editor rewrites the file, we work inside a temp
-	// directory.
-	dir, err := ioutil.TempDir("" /* system default temp dir */, "xmpp-client")
-	if err != nil {
-		s.xio.Alert("Failed to create temp dir to edit roster: " + err.Error())
-		return
-	}
-
-	mode, err := os.Stat(dir)
-	if err != nil || mode.Mode()&os.ModePerm != 0700 {
-		panic("broken system libraries gave us an insecure temp dir")
-	}
-
-	fileName := filepath.Join(dir, "roster")
-	f, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		s.xio.Alert("Failed to create temp file: " + err.Error())
-		return
-	}
-
-	io.WriteString(f, `# Use this file to edit your roster.
-# The file is tab deliminated and you need to preserve that. Otherwise you
-# can delete lines to remove roster entries, add lines to subscribe (only
-# the account is needed when adding a line) and change lines to change the
-# corresponding entry.
-
-# Once you are done, use the /rostereditdone command to process the result.
-
-# Since there are multiple levels of unspecified character encoding, we give up
-# and hex escape anything outside of printable ASCII in "\x01" form.
-
-`)
-
-	// Calculate the number of tabs which covers the longest escaped JID.
-	maxLen := 0
-	escapedJids := make([]string, len(roster))
-	for i, item := range roster {
-		escapedJids[i] = xlib.EscapeNonASCII(item.Jid)
-		if l := len(escapedJids[i]); l > maxLen {
-			maxLen = l
-		}
-	}
-	tabs := (maxLen + 7) / 8
-
-	for i, item := range s.roster {
-		line := escapedJids[i]
-		tabsUsed := len(escapedJids[i]) / 8
-
-		if len(item.Name) > 0 || len(item.Group) > 0 {
-			// We're going to put something else on the line to tab
-			// across to the next column.
-			for i := 0; i < tabs-tabsUsed; i++ {
-				line += "\t"
-			}
-		}
-
-		if len(item.Name) > 0 {
-			line += "name:" + xlib.EscapeNonASCII(item.Name)
-			if len(item.Group) > 0 {
-				line += "\t"
-			}
-		}
-
-		for j, group := range item.Group {
-			if j > 0 {
-				line += "\t"
-			}
-			line += "group:" + xlib.EscapeNonASCII(group)
-		}
-		line += "\n"
-		io.WriteString(f, line)
-	}
-	f.Close()
-
-	s.pendingRosterChan <- &rosterEdit{
-		fileName: fileName,
-		roster:   roster,
-	}
-}
-
-func (s *Session) loadEditedRoster(edit rosterEdit) {
-	contents, err := ioutil.ReadFile(edit.fileName)
-	if err != nil {
-		s.xio.Alert("Failed to load edited roster: " + err.Error())
-		return
-	}
-	os.Remove(edit.fileName)
-	os.Remove(filepath.Dir(edit.fileName))
-
-	edit.isComplete = true
-	edit.contents = contents
-	s.pendingRosterChan <- &edit
-}
-
-func (s *Session) processEditedRoster(edit *rosterEdit) bool {
-	parsedRoster := make(map[string]xmpp.RosterEntry)
-	lines := bytes.Split(edit.contents, newLine)
-	tab := []byte{'\t'}
-
-	// Parse roster entries from the file.
-	for i, line := range lines {
-		if len(line) == 0 || line[0] == '#' {
-			continue
-		}
-		parts := bytes.Split(line, tab)
-
-		var entry xmpp.RosterEntry
-		var err error
-
-		if entry.Jid, err = xlib.UnescapeNonASCII(string(string(parts[0]))); err != nil {
-			s.xio.Alert(fmt.Sprintf("Failed to parse JID on line %d: %s", i+1, err))
-			return false
-		}
-		for _, part := range parts[1:] {
-			if len(part) == 0 {
-				continue
-			}
-
-			pos := bytes.IndexByte(part, ':')
-			if pos == -1 {
-				s.xio.Alert(fmt.Sprintf("Failed to find colon in item on line %d", i+1))
-				return false
-			}
-
-			typ := string(part[:pos])
-			value, err := xlib.UnescapeNonASCII(string(part[pos+1:]))
-			if err != nil {
-				s.xio.Alert(fmt.Sprintf("Failed to unescape item on line %d: %s", i+1, err))
-				return false
-			}
-
-			switch typ {
-			case "name":
-				if len(entry.Name) > 0 {
-					s.xio.Alert(fmt.Sprintf("Multiple names given for contact on line %d", i+1))
-					return false
-				}
-				entry.Name = value
-			case "group":
-				if len(value) > 0 {
-					entry.Group = append(entry.Group, value)
-				}
-			default:
-				s.xio.Alert(fmt.Sprintf("Unknown item tag '%s' on line %d", typ, i+1))
-				return false
-			}
-		}
-
-		parsedRoster[entry.Jid] = entry
-	}
-
-	// Now diff them from the original roster
-	var toDelete []string
-	var toEdit []xmpp.RosterEntry
-	var toAdd []xmpp.RosterEntry
-
-	for _, entry := range edit.roster {
-		newEntry, ok := parsedRoster[entry.Jid]
-		if !ok {
-			toDelete = append(toDelete, entry.Jid)
-			continue
-		}
-		if newEntry.Name != entry.Name || !setEqual(newEntry.Group, entry.Group) {
-			toEdit = append(toEdit, newEntry)
-		}
-	}
-
-NextAdd:
-	for jid, newEntry := range parsedRoster {
-		for _, entry := range edit.roster {
-			if entry.Jid == jid {
-				continue NextAdd
-			}
-		}
-		toAdd = append(toAdd, newEntry)
-	}
-
-	for _, jid := range toDelete {
-		s.xio.Info("Deleting roster entry for " + jid)
-		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
-			Item: xmpp.RosterRequestItem{
-				Jid:          jid,
-				Subscription: "remove",
-			},
-		})
-		if err != nil {
-			s.xio.Alert("Failed to remove roster entry: " + err.Error())
-		}
-
-		// Filter out any known fingerprints.
-		newKnownFingerprints := make([]KnownFingerprint, 0, len(s.config.KnownFingerprints))
-		for _, fpr := range s.config.KnownFingerprints {
-			if fpr.UserId == jid {
-				continue
-			}
-			newKnownFingerprints = append(newKnownFingerprints, fpr)
-		}
-		s.config.KnownFingerprints = newKnownFingerprints
-		s.config.Save()
-	}
-
-	for _, entry := range toEdit {
-		s.xio.Info("Updating roster entry for " + entry.Jid)
-		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
-			Item: xmpp.RosterRequestItem{
-				Jid:   entry.Jid,
-				Name:  entry.Name,
-				Group: entry.Group,
-			},
-		})
-		if err != nil {
-			s.xio.Alert("Failed to update roster entry: " + err.Error())
-		}
-	}
-
-	for _, entry := range toAdd {
-		s.xio.Info("Adding roster entry for " + entry.Jid)
-		_, _, err := s.conn.SendIQ("" /* to the server */, "set", xmpp.RosterRequest{
-			Item: xmpp.RosterRequestItem{
-				Jid:   entry.Jid,
-				Name:  entry.Name,
-				Group: entry.Group,
-			},
-		})
-		if err != nil {
-			s.xio.Alert("Failed to add roster entry: " + err.Error())
-		}
-	}
-
-	return true
-}
-
-func setEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-EachValue:
-	for _, v := range a {
-		for _, v2 := range b {
-			if v == v2 {
-				continue EachValue
-			}
-		}
-		return false
-	}
-
-	return true
 }
 
 type rawLogger struct {
@@ -1288,8 +403,6 @@ func (r *rawLogger) Write(data []byte) (int, error) {
 	return origLen, nil
 }
 
-var newLine = []byte{'\n'}
-
 func (r *rawLogger) flush() error {
 	if len(r.buf) == 0 {
 		return nil
@@ -1301,7 +414,7 @@ func (r *rawLogger) flush() error {
 	if _, err := r.out.Write(r.buf); err != nil {
 		return err
 	}
-	if _, err := r.out.Write(newLine); err != nil {
+	if _, err := r.out.Write(xlib.NEWLINE); err != nil {
 		return err
 	}
 	r.buf = r.buf[:0]
@@ -1338,22 +451,6 @@ func (l *lineLogger) Write(data []byte) (int, error) {
 
 	l.buf = l.logLines(l.buf)
 	return origLen, nil
-}
-
-func printConversationInfo(s *Session, uid string, conversation *otr.Conversation) {
-	fpr := conversation.TheirPublicKey.Fingerprint()
-	fprUid := s.config.UserIdForFingerprint(fpr)
-	s.xio.Info(fmt.Sprintf("  Fingerprint  for %s: %x", uid, fpr))
-	s.xio.Info(fmt.Sprintf("  Session  ID  for %s: %x", uid, conversation.SSID))
-	if fprUid == uid {
-		s.xio.Info(fmt.Sprintf("  Identity key for %s is verified", uid))
-	} else if len(fprUid) > 1 {
-		s.xio.Alert(fmt.Sprintf("  Warning: %s is using an identity key which was verified for %s", uid, fprUid))
-	} else if s.config.HasFingerprint(uid) {
-		s.xio.Critical(fmt.Sprintf("  Identity key for %s is incorrect", uid))
-	} else {
-		s.xio.Alert(fmt.Sprintf("  Identity key for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", uid))
-	}
 }
 
 // promptForForm runs an XEP-0004 form and collects responses from the user.
