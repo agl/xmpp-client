@@ -1,19 +1,16 @@
 package main
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/agl/xmpp-client/xmpp"
@@ -144,7 +141,7 @@ func main() {
 	}
 
 	xmppConfig := &xmpp.Config{
-		Log:                     &lineLogger{xio, nil},
+		Log:                     xlib.NewLineLogger(xio),
 		CreateCallback:          createCallback,
 		TrustedAddress:          addrTrusted,
 		Archive:                 false,
@@ -176,30 +173,11 @@ func main() {
 	}
 
 	if len(config.RawLogFile) > 0 {
-		rawLog, err := os.OpenFile(config.RawLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		err := xlib.SetupRawLog(config.RawLogFile, xmppConfig)
 		if err != nil {
 			xio.Alert("Failed to open raw log file: " + err.Error())
 			return
 		}
-
-		lock := new(sync.Mutex)
-		in := rawLogger{
-			out:    rawLog,
-			prefix: []byte("<- "),
-			lock:   lock,
-		}
-		out := rawLogger{
-			out:    rawLog,
-			prefix: []byte("-> "),
-			lock:   lock,
-		}
-		in.other, out.other = &out, &in
-
-		xmppConfig.InLog = &in
-		xmppConfig.OutLog = &out
-
-		defer in.flush()
-		defer out.flush()
 	}
 
 	if dialer != nil {
@@ -369,84 +347,4 @@ MainLoop:
 	}
 
 	os.Stdout.Write([]byte("\n"))
-}
-
-type rawLogger struct {
-	out    io.Writer
-	prefix []byte
-	lock   *sync.Mutex
-	other  *rawLogger
-	buf    []byte
-}
-
-func (r *rawLogger) Write(data []byte) (int, error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	if err := r.other.flush(); err != nil {
-		return 0, nil
-	}
-
-	origLen := len(data)
-	for len(data) > 0 {
-		if newLine := bytes.IndexByte(data, '\n'); newLine >= 0 {
-			r.buf = append(r.buf, data[:newLine]...)
-			data = data[newLine+1:]
-		} else {
-			r.buf = append(r.buf, data...)
-			data = nil
-		}
-	}
-
-	return origLen, nil
-}
-
-func (r *rawLogger) flush() error {
-	if len(r.buf) == 0 {
-		return nil
-	}
-
-	if _, err := r.out.Write(r.prefix); err != nil {
-		return err
-	}
-	if _, err := r.out.Write(r.buf); err != nil {
-		return err
-	}
-	if _, err := r.out.Write(xlib.NEWLINE); err != nil {
-		return err
-	}
-	r.buf = r.buf[:0]
-	return nil
-}
-
-type lineLogger struct {
-	xio xlib.XIO
-	buf []byte
-}
-
-func (l *lineLogger) logLines(in []byte) []byte {
-	for len(in) > 0 {
-		if newLine := bytes.IndexByte(in, '\n'); newLine >= 0 {
-			l.xio.Info(string(in[:newLine]))
-			in = in[newLine+1:]
-		} else {
-			break
-		}
-	}
-	return in
-}
-
-func (l *lineLogger) Write(data []byte) (int, error) {
-	origLen := len(data)
-
-	if len(l.buf) == 0 {
-		data = l.logLines(data)
-	}
-
-	if len(data) > 0 {
-		l.buf = append(l.buf, data...)
-	}
-
-	l.buf = l.logLines(l.buf)
-	return origLen, nil
 }
