@@ -1,20 +1,15 @@
 package main
 
 import (
-	"crypto/tls"
-	"encoding/hex"
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/agl/xmpp-client/xmpp"
 	"golang.org/x/crypto/otr"
-	"golang.org/x/net/proxy"
 
 	"github.com/agl/xmpp-client/xlib"
 )
@@ -75,110 +70,17 @@ func main() {
 
 	xio.SetPrompt("> ")
 
-	parts := strings.SplitN(config.Account, "@", 2)
-	if len(parts) != 2 {
-		xio.Alert("invalid username (want user@domain): " + config.Account)
-		return
-	}
-	user := parts[0]
-	domain := parts[1]
-
-	var addr string
-	addrTrusted := false
-
-	if len(config.Server) > 0 && config.Port > 0 {
-		addr = fmt.Sprintf("%s:%d", config.Server, config.Port)
-		addrTrusted = true
-	} else {
-		if len(config.Proxies) > 0 {
-			xio.Alert("Cannot connect via a proxy without Server and Port being set in the config file as an SRV lookup would leak information.")
-			return
-		}
-		host, port, err := xmpp.Resolve(domain)
-		if err != nil {
-			xio.Alert("Failed to resolve XMPP server: " + err.Error())
-			return
-		}
-		addr = fmt.Sprintf("%s:%d", host, port)
-	}
-
-	var dialer proxy.Dialer
-	for i := len(config.Proxies) - 1; i >= 0; i-- {
-		u, err := url.Parse(config.Proxies[i])
-		if err != nil {
-			xio.Alert("Failed to parse " + config.Proxies[i] + " as a URL: " + err.Error())
-			return
-		}
-		if dialer == nil {
-			dialer = proxy.Direct
-		}
-		if dialer, err = proxy.FromURL(u, dialer); err != nil {
-			xio.Alert("Failed to parse " + config.Proxies[i] + " as a proxy: " + err.Error())
-			return
-		}
-	}
-
-	var certSHA256 []byte
-	if len(config.ServerCertificateSHA256) > 0 {
-		certSHA256, err = hex.DecodeString(config.ServerCertificateSHA256)
-		if err != nil {
-			xio.Alert("Failed to parse ServerCertificateSHA256 (should be hex string): " + err.Error())
-			return
-		}
-		if len(certSHA256) != 32 {
-			xio.Alert("ServerCertificateSHA256 is not 32 bytes long")
-			return
-		}
-	}
-
 	var createCallback xmpp.FormCallback
 	if *createAccount {
+		user, _, _ := xlib.UserDom(config.Account)
 		createCallback = func(title, instructions string, fields []interface{}) error {
 			return promptForForm(xio, user, password, title, instructions, fields)
 		}
 	}
 
-	xmppConfig := &xmpp.Config{
-		Log:                     xlib.NewLineLogger(xio),
-		CreateCallback:          createCallback,
-		TrustedAddress:          addrTrusted,
-		Archive:                 false,
-		ServerCertificateSHA256: certSHA256,
-		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS10,
-			CipherSuites: []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			},
-		},
-	}
+	lgr := xlib.NewLineLogger(xio)
 
-	if len(config.RawLogFile) > 0 {
-		err := xlib.SetupRawLog(config.RawLogFile, xmppConfig)
-		if err != nil {
-			xio.Alert("Failed to open raw log file: " + err.Error())
-			return
-		}
-	}
-
-	if dialer != nil {
-		xio.Info("Making connection to " + addr + " via proxy")
-		if xmppConfig.Conn, err = dialer.Dial("tcp", addr); err != nil {
-			xio.Alert("Failed to connect via proxy: " + err.Error())
-			return
-		}
-	}
-
-	s := xlib.NewSession(config, xio)
-
-	err = s.Dial(addr, user, domain, password, xmppConfig)
-	if err != nil {
-		xio.Alert("Failed to connect to XMPP server: " + err.Error())
-		return
-	}
+	s, err := xlib.Connect(xio, config, password, lgr, createCallback)
 
 	s.SignalPresence("")
 
