@@ -89,6 +89,8 @@ func main() {
 
 	s.SignalPresence("")
 
+	s.FetchRoster()
+
 	input := NewInput(xio)
 
 	commandChan := make(chan interface{})
