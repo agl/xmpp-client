@@ -277,6 +277,7 @@ func (s *Session) IgnoreList() {
 
 func (s *Session) ProcessClientMessage(stanza *xmpp.ClientMessage) {
 	from := xmpp.RemoveResourceFromJid(stanza.From)
+	to := xmpp.RemoveResourceFromJid(stanza.To)
 
 	if _, ok := s.ignored[from]; ok {
 		return
@@ -401,7 +402,7 @@ func (s *Session) ProcessClientMessage(stanza *xmpp.ClientMessage) {
 		timestamp = messageTime.Format(time.Stamp)
 	}
 
-	s.Xio.Message(timestamp, from, out, encrypted, s.config.Bell)
+	s.Xio.Message(timestamp, from, to, out, encrypted, s.config.Bell)
 	s.maybeNotify()
 }
 
