@@ -66,6 +66,7 @@ func main() {
 			xio.Alert("Failed to read password: " + err.Error())
 			return
 		}
+		config.Password = password
 	}
 
 	xio.SetPrompt("> ")
@@ -80,7 +81,7 @@ func main() {
 
 	lgr := xlib.NewLineLogger(xio)
 
-	s, err := xlib.Connect(xio, config, password, lgr, createCallback)
+	s, err := xlib.Connect(xio, config, lgr, createCallback)
 	if err != nil {
 		xio.Alert("Failed to connect: " + err.Error())
 		return

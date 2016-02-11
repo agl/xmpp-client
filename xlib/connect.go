@@ -23,7 +23,7 @@ func UserDom(account string) (user, domain string, err error) {
 	return
 }
 
-func Connect(xio XIO, config *Config, password string, logger io.Writer, formcb xmpp.FormCallback) (s *Session, err error) {
+func Connect(xio XIO, config *Config, logger io.Writer, formcb xmpp.FormCallback) (s *Session, err error) {
 	s = nil
 
 	user, domain, err := UserDom(config.Account)
@@ -118,7 +118,7 @@ func Connect(xio XIO, config *Config, password string, logger io.Writer, formcb 
 
 	s = NewSession(config, xio)
 
-	err = s.Dial(addr, user, domain, password, xmppConfig)
+	err = s.Dial(addr, user, domain, config.Password, xmppConfig)
 	if err != nil {
 		err = errors.New("Failed to connect to XMPP server: " + err.Error())
 		return
