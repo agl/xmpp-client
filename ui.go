@@ -94,9 +94,6 @@ func main() {
 	commandChan := make(chan interface{})
 	go input.ProcessCommands(s, commandChan)
 
-	stanzaChan := make(chan xmpp.Stanza)
-	go s.ReadMessages(stanzaChan)
-
 	xio.Info(fmt.Sprintf("Your fingerprint is %x", s.GetFingerprint()))
 
 	go s.Handle()
@@ -197,42 +194,6 @@ MainLoop:
 				s.UnignoreUser(cmd.User)
 			case ignoreListCommand:
 				s.IgnoreList()
-			}
-		case rawStanza, ok := <-stanzaChan:
-			if !ok {
-				xio.Warn("Exiting because channel to server closed")
-				break MainLoop
-			}
-			switch stanza := rawStanza.Value.(type) {
-			case *xmpp.ClientMessage:
-				s.ProcessClientMessage(stanza)
-			case *xmpp.ClientPresence:
-				s.ProcessPresence(stanza)
-			case *xmpp.ClientIQ:
-				if stanza.Type != "get" && stanza.Type != "set" {
-					continue
-				}
-				reply := s.ProcessIQ(stanza)
-				if reply == nil {
-					reply = xmpp.ErrorReply{
-						Type:  "cancel",
-						Error: xmpp.ErrorBadRequest{},
-					}
-				}
-				if err := s.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
-					xio.Alert("Failed to send IQ message: " + err.Error())
-				}
-			case *xmpp.StreamError:
-				var text string
-				if len(stanza.Text) > 0 {
-					text = stanza.Text
-				} else {
-					text = fmt.Sprintf("%s", stanza.Any)
-				}
-				xio.Alert("Exiting in response to fatal error from server: " + text)
-				break MainLoop
-			default:
-				xio.Info(fmt.Sprintf("%s %s", rawStanza.Name, rawStanza.Value))
 			}
 		}
 	}

@@ -1010,9 +1010,14 @@ func (s *Session) tick(now time.Time) {
 }
 
 func (s *Session) Handle() {
+	stanzaChan := make(chan xmpp.Stanza)
+	go s.ReadMessages(stanzaChan)
+
 	ticker := time.NewTicker(1 * time.Second)
 
-	for {
+	running := true
+
+	for running {
 		select {
 		case now := <-ticker.C:
 			s.tick(now)
@@ -1044,6 +1049,45 @@ func (s *Session) Handle() {
 			}
 			s.Xio.Info("Roster received")
 
+		case rawStanza, ok := <-stanzaChan:
+			if !ok {
+				s.Xio.Warn("Exiting because channel to server closed")
+				running = false
+				break
+			}
+			switch stanza := rawStanza.Value.(type) {
+			case *xmpp.ClientMessage:
+				s.ProcessClientMessage(stanza)
+			case *xmpp.ClientPresence:
+				s.ProcessPresence(stanza)
+			case *xmpp.ClientIQ:
+				if stanza.Type != "get" && stanza.Type != "set" {
+					continue
+				}
+				reply := s.ProcessIQ(stanza)
+				if reply == nil {
+					reply = xmpp.ErrorReply{
+						Type:  "cancel",
+						Error: xmpp.ErrorBadRequest{},
+					}
+				}
+				if err := s.SendIQReply(stanza.From, "result", stanza.Id, reply); err != nil {
+					s.Xio.Alert("Failed to send IQ message: " + err.Error())
+				}
+
+			case *xmpp.StreamError:
+				var text string
+				if len(stanza.Text) > 0 {
+					text = stanza.Text
+				} else {
+					text = fmt.Sprintf("%s", stanza.Any)
+				}
+				s.Xio.Alert("Exiting in response to fatal error from server: " + text)
+				running = false
+
+			default:
+				s.Xio.Info(fmt.Sprintf("%s %s", rawStanza.Name, rawStanza.Value))
+			}
 		}
 	}
 }
