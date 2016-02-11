@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/agl/xmpp-client/xlib"
 	"reflect"
 	"testing"
 )
@@ -38,7 +39,7 @@ var priorityListTests = []struct {
 }
 
 func TestPriorityList(t *testing.T) {
-	var pl priorityList
+	var pl xlib.PriorityList
 
 	for _, word := range []string{"bop", "boom", "bob", "anvil", "anchor", "charlie"} {
 		pl.Insert(word)
