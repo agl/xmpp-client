@@ -813,6 +813,11 @@ func (s *Session) Dial(addr, user, domain, password string, cfg *xmpp.Config) (e
 		return
 	}
 
+	return
+}
+
+func (s *Session) FetchRoster() (err error) {
+
 	s.Xio.Info("Fetching roster")
 
 	//var rosterReply chan xmpp.Stanza
