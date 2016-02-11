@@ -1,2 +1,5 @@
 # Editor stuff
 *.swp
+
+# Local Binary
+xmpp-client
