@@ -81,6 +81,10 @@ func main() {
 	lgr := xlib.NewLineLogger(xio)
 
 	s, err := xlib.Connect(xio, config, password, lgr, createCallback)
+	if err != nil {
+		xio.Alert("Failed to connect: " + err.Error())
+		return
+	}
 
 	s.SignalPresence("")
 
