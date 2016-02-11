@@ -19,4 +19,6 @@ type XIO interface {
 	SetAutoCompleteCallback(f XIOAutoCompleteCallbackI)
 	Resize()
 	Destroy()
+	SetSession(s *Session)
+	GetSession() (s *Session)
 }

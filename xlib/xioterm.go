@@ -23,6 +23,7 @@ func appendTerminalEscaped(out, msg []byte) []byte {
 
 type XIOTerm struct {
 	term *terminal.Terminal
+	s    *Session
 }
 
 func (xio *XIOTerm) terminalMessage(color []byte, msg string, critical bool) {
@@ -156,6 +157,14 @@ func (xio *XIOTerm) Resize() {
 
 func (xio *XIOTerm) Destroy() {
 	xio.term.SetBracketedPasteMode(false)
+}
+
+func (xio *XIOTerm) SetSession(s *Session) {
+	xio.s = s
+}
+
+func (xio *XIOTerm) GetSession() (s *Session) {
+	return xio.s
 }
 
 func NewXIOTerm() (x XIO) {
