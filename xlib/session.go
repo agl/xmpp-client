@@ -812,7 +812,6 @@ func (s *Session) Dial(addr, user, domain, password string, cfg *xmpp.Config) (e
 
 	s.Conn, err = xmpp.Dial(addr, user, domain, password, cfg)
 	if err != nil {
-		s.Xio.Alert("Failed to connect to XMPP server: " + err.Error())
 		return
 	}
 

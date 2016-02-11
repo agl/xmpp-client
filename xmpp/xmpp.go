@@ -567,6 +567,7 @@ func Dial(address, user, domain, password string, config *Config) (c *Conn, err 
 
 		tlsConn := tls.Client(conn, &tlsConfig)
 		if err := tlsConn.Handshake(); err != nil {
+			err = errors.New("TLS Handshake failed: " + err.Error())
 			return nil, err
 		}
 
