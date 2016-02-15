@@ -788,8 +788,6 @@ func NewSession(config *Config, xio XIO) (s *Session) {
 		uidComplete: new(PriorityList),
 	}
 
-	xio.SetSession(s)
-
 	s.privateKey.Parse(config.PrivateKey)
 	return
 }

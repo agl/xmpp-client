@@ -159,14 +159,6 @@ func (xio *XIOTerm) Destroy() {
 	xio.term.SetBracketedPasteMode(false)
 }
 
-func (xio *XIOTerm) SetSession(s *Session) {
-	xio.s = s
-}
-
-func (xio *XIOTerm) GetSession() (s *Session) {
-	return xio.s
-}
-
 func NewXIOTerm() (x XIO) {
 	term := terminal.NewTerminal(os.Stdin, "")
 	term.SetBracketedPasteMode(true)
