@@ -37,13 +37,27 @@ const (
 	NsClient  = "jabber:client"
 )
 
-// RemoveResourceFromJid returns the user@domain portion of a JID.
-func RemoveResourceFromJid(jid string) string {
+func SplitJid(jid string) (udom string, resource string) {
 	slash := strings.Index(jid, "/")
 	if slash != -1 {
-		return jid[:slash]
+		udom = jid[:slash]
+		resource = jid[slash+1:]
+		slash = strings.Index(resource, "/")
+		if slash != -1 {
+			resource = resource[:slash]
+		}
+		return
 	}
-	return jid
+
+	udom = jid
+	resource = ""
+	return
+}
+
+// RemoveResourceFromJid returns the user@domain portion of a JID.
+func RemoveResourceFromJid(jid string) (udom string) {
+	udom, _ = SplitJid(jid)
+	return
 }
 
 // domainFromJid returns the domain of a full or bare JID.
@@ -67,6 +81,10 @@ type Conn struct {
 	lock          sync.Mutex
 	inflights     map[Cookie]inflight
 	customStorage map[xml.Name]reflect.Type
+
+	// chatTypes maps from a JID (without the resource) to the
+	// type of conversation if it is not 'chat' (and thus 'groupchat')
+	chatTypes map[string]string
 }
 
 // inflight contains the details of a pending request to which we are awaiting
@@ -266,7 +284,14 @@ func (c *Conn) Send(to, msg string) error {
 		// http://xmpp.org/extensions/xep-0136.html#otr-nego
 		archive = "<nos:x xmlns:nos='google:nosave' value='enabled'/><arc:record xmlns:arc='http://jabber.org/protocol/archive' otr='require'/>"
 	}
-	_, err := fmt.Fprintf(c.out, "<message to='%s' from='%s' type='chat'><body>%s</body>%s</message>", xmlEscape(to), xmlEscape(c.jid), xmlEscape(msg), archive)
+
+	// Only non-'chat' types are listed
+	chattype, cok := c.chatTypes[to]
+	if !cok {
+		chattype = "chat"
+	}
+
+	_, err := fmt.Fprintf(c.out, "<message to='%s' from='%s' type='%s'><body>%s</body>%s</message>", xmlEscape(to), xmlEscape(c.jid), chattype, xmlEscape(msg), archive)
 	return err
 }
 
@@ -283,6 +308,47 @@ func (c *Conn) SendPresence(to, typ, id string) error {
 func (c *Conn) SignalPresence(state string) error {
 	_, err := fmt.Fprintf(c.out, "<presence><show>%s</show></presence>", xmlEscape(state))
 	return err
+}
+
+/* XEP-0045 7.2 */
+const nsMUC = "http://jabber.org/protocol/muc"
+
+/* XEP-0045 7.2 & 7.2.6 */
+func (c *Conn) JoinMUC(to, nick, password string) error {
+	if nick == "" {
+		nick = c.jid
+	}
+
+	pw := ""
+	if password != "" {
+		pw = "<password>" + xmlEscape(password) + "</password>\n"
+	}
+
+	_, err := fmt.Fprintf(c.out, "<presence to='%s/%s'>\n<x xmlns='http://jabber.org/protocol/muc'>\n%s</x>\n</presence>", xmlEscape(to), xmlEscape(nick), pw)
+
+	/* Register this as a groupchat */
+	c.chatTypes[to] = "groupchat"
+	return err
+}
+
+/* XEP-0045 7.14 */
+func (c *Conn) LeaveMUC(to string) error {
+	_, err := fmt.Fprintf(c.out, "<presence from='%s' to='%s' type='unavailable' />", c.jid, xmlEscape(to))
+
+	/* Unregister as group chat */
+	delete(c.chatTypes, to)
+
+	return err
+}
+
+func (c *Conn) IsMUC(jid string) bool {
+	// Only non-'chat' types are listed
+	ctype, cok := c.chatTypes[jid]
+	if !cok || ctype != "groupchat" {
+		return false
+	}
+
+	return true
 }
 
 func (c *Conn) SendStanza(s interface{}) error {
@@ -383,7 +449,7 @@ func certName(cert *x509.Certificate) string {
 func Resolve(domain string) (host string, port uint16, err error) {
 	_, addrs, err := net.LookupSRV("xmpp-client", "tcp", domain)
 	if err != nil {
-		return "", 0, err
+		return domain, 5222, nil
 	}
 	if len(addrs) == 0 {
 		return "", 0, errors.New("xmpp: no SRV records found for " + domain)
@@ -471,6 +537,7 @@ func printTLSDetails(w io.Writer, tlsState tls.ConnectionState) {
 func Dial(address, user, domain, password string, config *Config) (c *Conn, err error) {
 	c = new(Conn)
 	c.inflights = make(map[Cookie]inflight)
+	c.chatTypes = make(map[string]string)
 	c.archive = config.Archive
 
 	log := ioutil.Discard
@@ -524,6 +591,7 @@ func Dial(address, user, domain, password string, config *Config) (c *Conn, err 
 
 		tlsConn := tls.Client(conn, &tlsConfig)
 		if err := tlsConn.Handshake(); err != nil {
+			err = errors.New("TLS Handshake failed: " + err.Error())
 			return nil, err
 		}
 
@@ -820,12 +888,17 @@ type ClientPresence struct {
 	Type    string   `xml:"type,attr,omitempty"` // error, probe, subscribe, subscribed, unavailable, unsubscribe, unsubscribed
 	Lang    string   `xml:"lang,attr,omitempty"`
 
-	Show     string       `xml:"show,omitempty"`   // away, chat, dnd, xa
-	Status   string       `xml:"status,omitempty"` // sb []clientText
-	Priority string       `xml:"priority,omitempty"`
-	Caps     *ClientCaps  `xml:"c"`
-	Error    *ClientError `xml:"error"`
-	Delay    Delay        `xml:"delay"`
+	Show      string         `xml:"show,omitempty"`   // away, chat, dnd, xa
+	Status    string         `xml:"status,omitempty"` // sb []clientText
+	Priority  string         `xml:"priority,omitempty"`
+	Caps      *ClientCaps    `xml:"c"`
+	UserItems []PresenceItem `xml:"x>item"`
+	Error     *ClientError   `xml:"error"`
+	Delay     Delay          `xml:"delay"`
+}
+
+type PresenceItem struct {
+	Jid string `xml:"jid,attr"`
 }
 
 type ClientCaps struct {

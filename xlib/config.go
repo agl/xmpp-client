@@ -1,4 +1,4 @@
-package main
+package xlib
 
 import (
 	"bytes"
@@ -13,7 +13,6 @@ import (
 
 	"github.com/agl/xmpp-client/xmpp"
 	"golang.org/x/crypto/otr"
-	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/proxy"
 )
 
@@ -115,25 +114,29 @@ func (c *Config) ShouldEncryptTo(uid string) bool {
 	return false
 }
 
+func NewConfig(filename string) (c *Config) {
+	return &Config{filename: filename}
+}
+
 func isYes(s string) bool {
 	lower := strings.ToLower(s)
 	return lower == "yes" || lower == "y"
 }
 
-func enroll(config *Config, term *terminal.Terminal) bool {
+func Enroll(config *Config, xio XIO) bool {
 	var err error
-	warn(term, "Enrolling new config file")
+	xio.Warn("Enrolling new config file")
 
 	var domain string
 	for {
-		term.SetPrompt("Account (i.e. user@example.com, enter to quit): ")
-		if config.Account, err = term.ReadLine(); err != nil || len(config.Account) == 0 {
+		xio.SetPrompt("Account (i.e. user@example.com, enter to quit): ")
+		if config.Account, err = xio.ReadLine(); err != nil || len(config.Account) == 0 {
 			return false
 		}
 
 		parts := strings.SplitN(config.Account, "@", 2)
 		if len(parts) != 2 {
-			alert(term, "invalid username (want user@domain): "+config.Account)
+			xio.Alert("invalid username (want user@domain): " + config.Account)
 			continue
 		}
 		domain = parts[1]
@@ -141,45 +144,45 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	}
 
 	const debugLogFile = "/tmp/xmpp-client-debug.log"
-	term.SetPrompt("Enable debug logging to " + debugLogFile + " (y/n)?: ")
-	if debugLog, err := term.ReadLine(); err != nil || !isYes(debugLog) {
-		info(term, "Not enabling debug logging...")
+	xio.SetPrompt("Enable debug logging to " + debugLogFile + " (y/n)?: ")
+	if debugLog, err := xio.ReadLine(); err != nil || !isYes(debugLog) {
+		xio.Info("Not enabling debug logging...")
 	} else {
 		config.RawLogFile = debugLogFile
-		info(term, "Debug logging enabled.")
+		xio.Info("Debug logging enabled.")
 	}
 
-	term.SetPrompt("Use Tor (y/n)?: ")
-	if useTorQuery, err := term.ReadLine(); err != nil || !isYes(useTorQuery) {
-		info(term, "Not using Tor...")
+	xio.SetPrompt("Use Tor (y/n)?: ")
+	if useTorQuery, err := xio.ReadLine(); err != nil || !isYes(useTorQuery) {
+		xio.Info("Not using Tor...")
 		config.UseTor = false
 	} else {
-		info(term, "Using Tor...")
+		xio.Info("Using Tor...")
 		config.UseTor = true
 	}
 
-	term.SetPrompt("File to import libotr private key from (enter to generate): ")
+	xio.SetPrompt("File to import libotr private key from (enter to generate): ")
 
 	var priv otr.PrivateKey
 	for {
-		importFile, err := term.ReadLine()
+		importFile, err := xio.ReadLine()
 		if err != nil {
 			return false
 		}
 		if len(importFile) > 0 {
 			privKeyBytes, err := ioutil.ReadFile(importFile)
 			if err != nil {
-				alert(term, "Failed to open private key file: "+err.Error())
+				xio.Alert("Failed to open private key file: " + err.Error())
 				continue
 			}
 
 			if !priv.Import(privKeyBytes) {
-				alert(term, "Failed to parse libotr private key file (the parser is pretty simple I'm afraid)")
+				xio.Alert("Failed to parse libotr private key file (the parser is pretty simple I'm afraid)")
 				continue
 			}
 			break
 		} else {
-			info(term, "Generating private key...")
+			xio.Info("Generating private key...")
 			priv.Generate(rand.Reader)
 			break
 		}
@@ -203,11 +206,11 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	// Autoconfigure well known Tor hidden services.
 	if hiddenService, ok := knownTorDomain[domain]; ok && config.UseTor {
 		const torProxyURL = "socks5://127.0.0.1:9050"
-		info(term, "It appears that you are using a well known server and we will use its Tor hidden service to connect.")
+		xio.Info("It appears that you are using a well known server and we will use its Tor hidden service to connect.")
 		config.Server = hiddenService
 		config.Port = 5222
 		config.Proxies = []string{torProxyURL}
-		term.SetPrompt("> ")
+		xio.SetPrompt("> ")
 		return true
 	}
 
@@ -216,10 +219,10 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	if config.UseTor {
 		proxyDefaultPrompt = ", which is the default"
 	}
-	term.SetPrompt("Proxy (i.e socks5://127.0.0.1:9050" + proxyDefaultPrompt + "): ")
+	xio.SetPrompt("Proxy (i.e socks5://127.0.0.1:9050" + proxyDefaultPrompt + "): ")
 
 	for {
-		if proxyStr, err = term.ReadLine(); err != nil {
+		if proxyStr, err = xio.ReadLine(); err != nil {
 			return false
 		}
 		if len(proxyStr) == 0 {
@@ -231,11 +234,11 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 		u, err := url.Parse(proxyStr)
 		if err != nil {
-			alert(term, "Failed to parse "+proxyStr+" as a URL: "+err.Error())
+			xio.Alert("Failed to parse " + proxyStr + " as a URL: " + err.Error())
 			continue
 		}
 		if _, err = proxy.FromURL(u, proxy.Direct); err != nil {
-			alert(term, "Failed to parse "+proxyStr+" as a proxy: "+err.Error())
+			xio.Alert("Failed to parse " + proxyStr + " as a proxy: " + err.Error())
 			continue
 		}
 		break
@@ -244,24 +247,24 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	if len(proxyStr) > 0 {
 		config.Proxies = []string{proxyStr}
 
-		info(term, "Since you selected a proxy, we need to know the server and port to connect to as a SRV lookup would leak information every time.")
-		term.SetPrompt("Server (i.e. xmpp.example.com, enter to lookup using unproxied DNS): ")
-		if config.Server, err = term.ReadLine(); err != nil {
+		xio.Info("Since you selected a proxy, we need to know the server and port to connect to as a SRV lookup would leak information every time.")
+		xio.SetPrompt("Server (i.e. xmpp.example.com, enter to lookup using unproxied DNS): ")
+		if config.Server, err = xio.ReadLine(); err != nil {
 			return false
 		}
 		if len(config.Server) == 0 {
 			var port uint16
-			info(term, "Performing SRV lookup")
+			xio.Info("Performing SRV lookup")
 			if config.Server, port, err = xmpp.Resolve(domain); err != nil {
-				alert(term, "SRV lookup failed: "+err.Error())
+				xio.Alert("SRV lookup failed: " + err.Error())
 				return false
 			}
 			config.Port = int(port)
-			info(term, "Resolved "+config.Server+":"+strconv.Itoa(config.Port))
+			xio.Info("Resolved " + config.Server + ":" + strconv.Itoa(config.Port))
 		} else {
 			for {
-				term.SetPrompt("Port (enter for 5222): ")
-				portStr, err := term.ReadLine()
+				xio.SetPrompt("Port (enter for 5222): ")
+				portStr, err := xio.ReadLine()
 				if err != nil {
 					return false
 				}
@@ -269,7 +272,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 					portStr = "5222"
 				}
 				if config.Port, err = strconv.Atoi(portStr); err != nil || config.Port <= 0 || config.Port > 65535 {
-					info(term, "Port numbers must be 0 < port <= 65535")
+					xio.Info("Port numbers must be 0 < port <= 65535")
 					continue
 				}
 				break
@@ -277,7 +280,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 	}
 
-	term.SetPrompt("> ")
+	xio.SetPrompt("> ")
 
 	return true
 }

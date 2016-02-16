@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 
+	"github.com/agl/xmpp-client/xlib"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -27,6 +27,8 @@ var uiCommands = []uiCommand{
 	{"help", helpCommand{}, "List known commands"},
 	{"ignore", ignoreCommand{}, "Ignore messages from another user"},
 	{"ignore-list", ignoreListCommand{}, "List currently ignored users"},
+	{"join", joinCommand{}, "Join a Multi-User-Chat"},
+	{"leave", leaveCommand{}, "Leave a Multi-User-Chat"},
 	{"nopaste", noPasteCommand{}, "Stop interpreting text verbatim"},
 	{"online", onlineCommand{}, "Set your status to Available / Online"},
 	{"otr-auth", authCommand{}, "Authenticate a secure peer with a mutual, shared secret"},
@@ -91,6 +93,14 @@ type ignoreCommand struct {
 }
 
 type ignoreListCommand struct{}
+
+type joinCommand struct {
+	User string "uid"
+}
+
+type leaveCommand struct {
+	User string "uid"
+}
 
 type msgCommand struct {
 	to  string
@@ -335,39 +345,19 @@ func parseCommand(commands []uiCommand, line []byte) (interface{}, string) {
 }
 
 type Input struct {
-	term                 *terminal.Terminal
-	commands             *priorityList
+	xio                  xlib.XIO
+	commands             *xlib.PriorityList
 	lastKeyWasCompletion bool
-
-	// lock protects uids, uidComplete and lastTarget.
-	lock        sync.Mutex
-	uids        []string
-	uidComplete *priorityList
-	lastTarget  string
 }
 
-func (i *Input) AddUser(uid string) {
-	i.lock.Lock()
-	defer i.lock.Unlock()
-
-	for _, existingUid := range i.uids {
-		if existingUid == uid {
-			return
-		}
-	}
-
-	i.uidComplete.Insert(uid)
-	i.uids = append(i.uids, uid)
-}
-
-func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
-	i.commands = new(priorityList)
+func (i *Input) ProcessCommands(s *xlib.Session, commandsChan chan<- interface{}) {
+	i.commands = new(xlib.PriorityList)
 	for _, command := range uiCommands {
 		i.commands.Insert(command.name)
 	}
 
 	autoCompleteCallback := func(line string, pos int, key rune) (string, int, bool) {
-		return i.AutoComplete(line, pos, key)
+		return i.AutoComplete(s, line, pos, key)
 	}
 
 	paste := false
@@ -375,17 +365,18 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 
 	for {
 		if paste {
-			i.term.AutoCompleteCallback = nil
+			i.xio.SetAutoCompleteCallback(nil)
 		} else {
-			i.term.AutoCompleteCallback = autoCompleteCallback
+			i.xio.SetAutoCompleteCallback(autoCompleteCallback)
 		}
 
-		line, err := i.term.ReadLine()
+		line, err := i.xio.ReadLine()
 		if err == terminal.ErrPasteIndicator {
-			if len(i.lastTarget) == 0 {
-				alert(i.term, "Pasted line ignored. Send a message to someone to select the destination.")
+			lt := s.GetLastTarget()
+			if len(lt) == 0 {
+				i.xio.Alert("Pasted line ignored. Send a message to someone to select the destination.")
 			} else {
-				commandsChan <- msgCommand{i.lastTarget, string(line), nil}
+				commandsChan <- msgCommand{lt, string(line), nil}
 			}
 			continue
 		}
@@ -398,7 +389,8 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			if l == "/nopaste" {
 				paste = false
 			} else {
-				commandsChan <- msgCommand{i.lastTarget, l, nil}
+				lt := s.GetLastTarget()
+				commandsChan <- msgCommand{lt, l, nil}
 			}
 			continue
 		}
@@ -408,7 +400,7 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 		if line[0] == '/' {
 			cmd, err := parseCommand(uiCommands, []byte(line))
 			if len(err) != 0 {
-				alert(i.term, err)
+				i.xio.Alert(err)
 				continue
 			}
 			// authCommand is turned into authQACommand with an
@@ -424,8 +416,8 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 				continue
 			}
 			if _, ok := cmd.(pasteCommand); ok {
-				if len(i.lastTarget) == 0 {
-					alert(i.term, "Can't enter paste mode without a destination. Send a message to someone to select the destination.")
+				if len(s.GetLastTarget()) == 0 {
+					i.xio.Alert("Can't enter paste mode without a destination. Send a message to someone to select the destination.")
 					continue
 				}
 				paste = true
@@ -436,8 +428,8 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 				continue
 			}
 			if _, ok := cmd.(closeCommand); ok {
-				i.lastTarget = ""
-				i.term.SetPrompt("> ")
+				s.SetLastTarget("")
+				i.xio.SetPrompt("> ")
 				continue
 			}
 			if cmd != nil {
@@ -446,52 +438,29 @@ func (i *Input) ProcessCommands(commandsChan chan<- interface{}) {
 			continue
 		}
 
-		i.lock.Lock()
+		lt := ""
+
 		if pos := strings.Index(line, string(nameTerminator)); pos > 0 {
 			possibleName := line[:pos]
-			for _, uid := range i.uids {
-				if possibleName == uid {
-					i.lastTarget = possibleName
-					line = line[pos+2:]
-					break
-				}
+			ok := false
+			ok = s.OptLastTarget(possibleName)
+			if ok {
+				line = line[pos+2:]
+				lt = possibleName
 			}
 		}
-		i.lock.Unlock()
 
-		if len(i.lastTarget) == 0 {
-			warn(i.term, "Start typing a Jabber address and hit tab to send a message to someone")
+		if len(lt) == 0 {
+			i.xio.Warn("Start typing a Jabber address and hit tab to send a message to someone")
 			continue
 		}
-		commandsChan <- msgCommand{i.lastTarget, string(line), setPromptIsEncrypted}
+		commandsChan <- msgCommand{lt, string(line), setPromptIsEncrypted}
 		isEncrypted := <-setPromptIsEncrypted
-		i.SetPromptForTarget(i.lastTarget, isEncrypted)
+		s.SetPromptForTarget(lt, isEncrypted)
 	}
 }
 
-func (input *Input) SetPromptForTarget(target string, isEncrypted bool) {
-	input.lock.Lock()
-	isCurrent := input.lastTarget == target
-	input.lock.Unlock()
-
-	if !isCurrent {
-		return
-	}
-
-	prompt := make([]byte, 0, len(target)+16)
-	if isEncrypted {
-		prompt = append(prompt, input.term.Escape.Green...)
-	} else {
-		prompt = append(prompt, input.term.Escape.Red...)
-	}
-
-	prompt = append(prompt, target...)
-	prompt = append(prompt, input.term.Escape.Reset...)
-	prompt = append(prompt, '>', ' ')
-	input.term.SetPrompt(string(prompt))
-}
-
-func (input *Input) showHelp() {
+func (i *Input) showHelp() {
 	examples := make([]string, len(uiCommands))
 	maxLen := 0
 
@@ -511,20 +480,20 @@ func (input *Input) showHelp() {
 		examples[i] = line
 	}
 
-	for i, cmd := range uiCommands {
-		line := examples[i]
+	for c, cmd := range uiCommands {
+		line := examples[c]
 		numSpaces := 1 + (maxLen - len(line))
 		for j := 0; j < numSpaces; j++ {
 			line += " "
 		}
 		line += cmd.desc
-		info(input.term, line)
+		i.xio.Info(line)
 	}
 }
 
 const nameTerminator = ": "
 
-func (i *Input) AutoComplete(line string, pos int, key rune) (string, int, bool) {
+func (i *Input) AutoComplete(s *xlib.Session, line string, pos int, key rune) (string, int, bool) {
 	const keyTab = 9
 
 	if key != keyTab {
@@ -532,8 +501,8 @@ func (i *Input) AutoComplete(line string, pos int, key rune) (string, int, bool)
 		return "", -1, false
 	}
 
-	i.lock.Lock()
-	defer i.lock.Unlock()
+	s.CompleteLock()
+	defer s.CompleteUnlock()
 
 	prefix := line[:pos]
 	if i.lastKeyWasCompletion {
@@ -547,7 +516,7 @@ func (i *Input) AutoComplete(line string, pos int, key rune) (string, int, bool)
 				return newLine, len(newCommand) + 2, true
 			} else if prefix[len(prefix)-1] == ' ' {
 				// We just completed a uid in a command.
-				newUser := i.uidComplete.Next()
+				newUser := s.CompleteNext()
 				spacePos := strings.LastIndex(prefix[:len(prefix)-1], " ")
 
 				newLine := prefix[:spacePos] + " " + string(newUser) + " " + line[pos:]
@@ -556,7 +525,7 @@ func (i *Input) AutoComplete(line string, pos int, key rune) (string, int, bool)
 		} else if len(prefix) > 0 && prefix[0] != '/' && strings.HasSuffix(prefix, nameTerminator) {
 			// We just completed a uid at the start of a
 			// conversation line.
-			newUser := i.uidComplete.Next()
+			newUser := s.CompleteNext()
 			newLine := string(newUser) + nameTerminator + line[pos:]
 			return newLine, len(newUser) + 2, true
 		}
@@ -570,7 +539,7 @@ func (i *Input) AutoComplete(line string, pos int, key rune) (string, int, bool)
 			if isCommand {
 				newValue, ok = i.commands.Find(b)
 			} else {
-				newValue, ok = i.uidComplete.Find(b)
+				newValue, ok = s.CompleteFind(b)
 			}
 			if !ok {
 				return "", -1, false
@@ -582,7 +551,7 @@ func (i *Input) AutoComplete(line string, pos int, key rune) (string, int, bool)
 		} else if len(prefix) > 0 && strings.IndexAny(prefix, ": \t") == -1 {
 			// We're completing a uid at the start of a
 			// conversation line.
-			newUser, ok := i.uidComplete.Find(prefix)
+			newUser, ok := s.CompleteFind(prefix)
 			if !ok {
 				return "", -1, false
 			}
@@ -597,68 +566,6 @@ func (i *Input) AutoComplete(line string, pos int, key rune) (string, int, bool)
 	return "", -1, false
 }
 
-type priorityListEntry struct {
-	value string
-	next  *priorityListEntry
-}
-
-type priorityList struct {
-	head       *priorityListEntry
-	lastPrefix string
-	lastResult string
-	n          int
-}
-
-func (pl *priorityList) Insert(value string) {
-	ent := new(priorityListEntry)
-	ent.next = pl.head
-	ent.value = value
-	pl.head = ent
-}
-
-func (pl *priorityList) findNth(prefix string, nth int) (string, bool) {
-	var cur, last *priorityListEntry
-	cur = pl.head
-	for n := 0; cur != nil; cur = cur.next {
-		if strings.HasPrefix(cur.value, prefix) {
-			if n == nth {
-				// move this entry to the top
-				if last != nil {
-					last.next = cur.next
-				} else {
-					pl.head = cur.next
-				}
-				cur.next = pl.head
-				pl.head = cur
-				pl.lastResult = cur.value
-				return cur.value, true
-			}
-			n++
-		}
-		last = cur
-	}
-
-	return "", false
-}
-
-func (pl *priorityList) Find(prefix string) (string, bool) {
-	pl.lastPrefix = prefix
-	pl.n = 0
-
-	return pl.findNth(prefix, 0)
-}
-
-func (pl *priorityList) Next() string {
-	pl.n++
-	result, ok := pl.findNth(pl.lastPrefix, pl.n)
-	if !ok {
-		pl.n = 1
-		result, ok = pl.findNth(pl.lastPrefix, pl.n)
-	}
-	// In this case, there's only one matching entry in the list.
-	if !ok {
-		pl.n = 0
-		result, _ = pl.findNth(pl.lastPrefix, pl.n)
-	}
-	return result
+func NewInput(xio xlib.XIO) Input {
+	return Input{xio: xio}
 }
