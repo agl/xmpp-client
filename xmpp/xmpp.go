@@ -37,13 +37,27 @@ const (
 	NsClient  = "jabber:client"
 )
 
-// RemoveResourceFromJid returns the user@domain portion of a JID.
-func RemoveResourceFromJid(jid string) string {
+func SplitJid(jid string) (udom string, resource string) {
 	slash := strings.Index(jid, "/")
 	if slash != -1 {
-		return jid[:slash]
+		udom = jid[:slash]
+		resource = jid[slash+1:]
+		slash = strings.Index(resource, "/")
+		if slash != -1 {
+			resource = resource[:slash]
+		}
+		return
 	}
-	return jid
+
+	udom = jid
+	resource = ""
+	return
+}
+
+// RemoveResourceFromJid returns the user@domain portion of a JID.
+func RemoveResourceFromJid(jid string) (udom string) {
+	udom, _ = SplitJid(jid)
+	return
 }
 
 // domainFromJid returns the domain of a full or bare JID.
@@ -325,6 +339,16 @@ func (c *Conn) LeaveMUC(to string) error {
 	delete(c.chatTypes, to)
 
 	return err
+}
+
+func (c *Conn) IsMUC(jid string) bool {
+	// Only non-'chat' types are listed
+	ctype, cok := c.chatTypes[jid]
+	if !cok || ctype != "groupchat" {
+		return false
+	}
+
+	return true
 }
 
 func (c *Conn) SendStanza(s interface{}) error {
@@ -864,12 +888,17 @@ type ClientPresence struct {
 	Type    string   `xml:"type,attr,omitempty"` // error, probe, subscribe, subscribed, unavailable, unsubscribe, unsubscribed
 	Lang    string   `xml:"lang,attr,omitempty"`
 
-	Show     string       `xml:"show,omitempty"`   // away, chat, dnd, xa
-	Status   string       `xml:"status,omitempty"` // sb []clientText
-	Priority string       `xml:"priority,omitempty"`
-	Caps     *ClientCaps  `xml:"c"`
-	Error    *ClientError `xml:"error"`
-	Delay    Delay        `xml:"delay"`
+	Show      string         `xml:"show,omitempty"`   // away, chat, dnd, xa
+	Status    string         `xml:"status,omitempty"` // sb []clientText
+	Priority  string         `xml:"priority,omitempty"`
+	Caps      *ClientCaps    `xml:"c"`
+	UserItems []PresenceItem `xml:"x>item"`
+	Error     *ClientError   `xml:"error"`
+	Delay     Delay          `xml:"delay"`
+}
+
+type PresenceItem struct {
+	Jid string `xml:"jid,attr"`
 }
 
 type ClientCaps struct {

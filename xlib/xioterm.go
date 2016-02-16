@@ -83,7 +83,7 @@ func (xio *XIOTerm) SetPromptEnc(target string, isEncrypted bool) {
 	xio.SetPrompt(string(prompt))
 }
 
-func (xio *XIOTerm) Message(timestamp, from, to string, msg []byte, isEncrypted bool, doBell bool) {
+func (xio *XIOTerm) Message(timestamp, from, to, channel string, msg []byte, isEncrypted bool, doBell bool) {
 	var line []byte
 
 	if isEncrypted {
@@ -103,11 +103,13 @@ func (xio *XIOTerm) Message(timestamp, from, to string, msg []byte, isEncrypted 
 	xio.term.Write(line)
 }
 
-func (xio *XIOTerm) StatusUpdate(timestamp, from, show, status string, gone bool) {
+func (xio *XIOTerm) StatusUpdate(timestamp, from, channel, show, status string, gone bool) {
 	var line []byte
 	line = append(line, []byte(fmt.Sprintf("   (%s) ", timestamp))...)
 	line = append(line, xio.term.Escape.Magenta...)
 	line = append(line, []byte(from)...)
+	line = append(line, []byte("->")...)
+	line = append(line, []byte(channel)...)
 	line = append(line, ':')
 	line = append(line, xio.term.Escape.Reset...)
 	line = append(line, ' ')

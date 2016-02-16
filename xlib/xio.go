@@ -11,8 +11,8 @@ type XIO interface {
 	ReadPassword(msg string) (password string, err error)
 	SetPrompt(prompt string)
 	SetPromptEnc(target string, isEncrypted bool)
-	Message(timestamp, from, to string, msg []byte, isEncrypted bool, doBell bool)
-	StatusUpdate(timestamp, from, show string, status string, gone bool)
+	Message(timestamp, from, fromres, to string, msg []byte, isEncrypted bool, doBell bool)
+	StatusUpdate(timestamp, from, to, show string, status string, gone bool)
 	FormStringForPrinting(s string) string
 	Write(s string)
 	ReadLine() (line string, err error)

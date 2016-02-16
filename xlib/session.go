@@ -47,8 +47,10 @@ type Session struct {
 	// presence state of that contact. It's used to deduping presence
 	// notifications.
 	knownStates map[string]string
-	privateKey  *otr.PrivateKey
-	config      *Config
+	// chanJidMap maps from a channel specific JID to the real JID of the person
+	chanJidMap map[string]map[string]string
+	privateKey *otr.PrivateKey
+	config     *Config
 	// lastMessageFrom is the JID (without the resource) of the contact
 	// that we last received a message from.
 	lastMessageFrom string
@@ -276,7 +278,18 @@ func (s *Session) IgnoreList() {
 }
 
 func (s *Session) ProcessClientMessage(stanza *xmpp.ClientMessage) {
-	from := xmpp.RemoveResourceFromJid(stanza.From)
+	channel := ""
+	from, fromres := xmpp.SplitJid(stanza.From)
+
+	if s.IsMUC(from) {
+		var ok bool
+		channel = from
+		from, ok = s.chanJidMap[channel][fromres]
+		if !ok {
+			from = channel
+		}
+	}
+
 	to := xmpp.RemoveResourceFromJid(stanza.To)
 
 	if _, ok := s.ignored[from]; ok {
@@ -402,7 +415,7 @@ func (s *Session) ProcessClientMessage(stanza *xmpp.ClientMessage) {
 		timestamp = messageTime.Format(time.Stamp)
 	}
 
-	s.Xio.Message(timestamp, from, to, out, encrypted, s.config.Bell)
+	s.Xio.Message(timestamp, from, to, channel, out, encrypted, s.config.Bell)
 	s.maybeNotify()
 }
 
@@ -444,6 +457,7 @@ func isAwayStatus(status string) bool {
 
 func (s *Session) ProcessPresence(stanza *xmpp.ClientPresence) {
 	gone := false
+	chn := ""
 
 	switch stanza.Type {
 	case "subscribe":
@@ -461,7 +475,7 @@ func (s *Session) ProcessPresence(stanza *xmpp.ClientPresence) {
 		return
 	}
 
-	from := xmpp.RemoveResourceFromJid(stanza.From)
+	from, fromres := xmpp.SplitJid(stanza.From)
 
 	if gone {
 		if _, ok := s.knownStates[from]; !ok {
@@ -482,9 +496,19 @@ func (s *Session) ProcessPresence(stanza *xmpp.ClientPresence) {
 		s.knownStates[from] = stanza.Show
 	}
 
+	/* Keep track of users in a MUC */
+	if s.IsMUC(from) && len(stanza.UserItems) > 0 {
+		for _, u := range stanza.UserItems {
+			jid := xmpp.RemoveResourceFromJid(u.Jid)
+			s.chanJidMap[from][fromres] = jid
+			chn = from
+			from = jid
+		}
+	}
+
 	if !s.config.HideStatusUpdates {
 		timestamp := time.Now().Format(time.Kitchen)
-		s.Xio.StatusUpdate(timestamp, from, stanza.Show, stanza.Status, gone)
+		s.Xio.StatusUpdate(timestamp, from, chn, stanza.Show, stanza.Status, gone)
 	}
 }
 
@@ -777,6 +801,7 @@ func NewSession(config *Config, xio XIO) (s *Session) {
 		Xio:               xio,
 		conversations:     make(map[string]*otr.Conversation),
 		knownStates:       make(map[string]string),
+		chanJidMap:        make(map[string]map[string]string),
 		privateKey:        new(otr.PrivateKey),
 		config:            config,
 		pendingRosterChan: make(chan *rosterEdit),
@@ -1136,4 +1161,19 @@ func (s *Session) PrintConversationInfo(uid string, conversation *otr.Conversati
 	} else {
 		s.Xio.Alert(fmt.Sprintf("  Identity key for %s is not verified. You should use /otr-auth or /otr-authqa or /otr-authoob to verify their identity", uid))
 	}
+}
+
+func (s *Session) JoinMUC(to, nick, password string) error {
+	/* Create a JID Map for this channel */
+	_, ok := s.chanJidMap[to]
+	if !ok {
+		s.chanJidMap[to] = make(map[string]string)
+	}
+
+	return s.Conn.JoinMUC(to, nick, password)
+}
+
+func (s *Session) LeaveMUC(to string) error {
+	delete(s.chanJidMap, to)
+	return s.Conn.LeaveMUC(to)
 }
