@@ -141,7 +141,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 	}
 
 	const debugLogFile = "/tmp/xmpp-client-debug.log"
-	term.SetPrompt("Enable debug logging to " + debugLogFile + " (y/n)?: ")
+	term.SetPrompt("Enable debug logging to " + debugLogFile + " (y/N)?: ")
 	if debugLog, err := term.ReadLine(); err != nil || !isYes(debugLog) {
 		info(term, "Not enabling debug logging...")
 	} else {
@@ -149,7 +149,7 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		info(term, "Debug logging enabled.")
 	}
 
-	term.SetPrompt("Use Tor (y/n)?: ")
+	term.SetPrompt("Use Tor (y/N)?: ")
 	if useTorQuery, err := term.ReadLine(); err != nil || !isYes(useTorQuery) {
 		info(term, "Not using Tor...")
 		config.UseTor = false
