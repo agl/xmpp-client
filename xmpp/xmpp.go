@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -655,14 +656,48 @@ func Dial(address, user, domain, password string, config *Config) (c *Conn, err 
 			return nil, errors.New("xmpp: session establishment failed")
 		}
 	}
+
+	go c.ping(domain)
 	return c, nil
 }
 
-func makeInOut(conn io.ReadWriter, config *Config) (in *xml.Decoder, out io.Writer) {
+const pingTime = 1 * time.Minute
+const ioTimeout = 3 * time.Minute
+
+// Send an XMPP ping periodically to verify the connection is alive.
+func (c *Conn) ping(domain string) {
+	for {
+		time.Sleep(pingTime)
+		fmt.Fprintf(c.out,
+			"<iq from='%s' to='%s' id='%x' type='get'><ping xmlns='urn:xmpp:ping'/></iq>",
+			c.jid, domain, c.getCookie())
+	}
+}
+
+// Tee off a copy of conn to a reader that continually updates the
+// read/write deadlines. This allows us to get an i/o timeout when
+// nothing is sent or received for a long time.
+func watchTimeouts(conn net.Conn) io.Reader {
+	pipeReader, pipeWriter := io.Pipe()
+	go func() {
+		var buf [1024]byte
+		for {
+			_, err := pipeReader.Read(buf[:])
+			if err != nil {
+				break
+			}
+			conn.SetDeadline(time.Now().Add(ioTimeout))
+		}
+	}()
+	return io.TeeReader(conn, pipeWriter)
+}
+
+func makeInOut(conn net.Conn, config *Config) (in *xml.Decoder, out io.Writer) {
+	connTee := watchTimeouts(conn)
 	if config != nil && config.InLog != nil {
-		in = xml.NewDecoder(io.TeeReader(conn, config.InLog))
+		in = xml.NewDecoder(io.TeeReader(connTee, config.InLog))
 	} else {
-		in = xml.NewDecoder(conn)
+		in = xml.NewDecoder(connTee)
 	}
 
 	if config != nil && config.OutLog != nil {
