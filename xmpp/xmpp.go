@@ -64,6 +64,7 @@ type Conn struct {
 	in      *xml.Decoder
 	jid     string
 	archive bool
+	domain  string
 
 	lock          sync.Mutex
 	inflights     map[Cookie]inflight
@@ -491,6 +492,7 @@ func Dial(address, user, domain, password string, config *Config) (c *Conn, err 
 	}
 
 	c.in, c.out = makeInOut(conn, config)
+	c.domain = domain
 
 	features, err := c.getFeatures(domain)
 	if err != nil {
@@ -657,21 +659,16 @@ func Dial(address, user, domain, password string, config *Config) (c *Conn, err 
 		}
 	}
 
-	go c.ping(domain)
 	return c, nil
 }
 
-const pingTime = 1 * time.Minute
 const ioTimeout = 3 * time.Minute
 
-// Send an XMPP ping periodically to verify the connection is alive.
-func (c *Conn) ping(domain string) {
-	for {
-		time.Sleep(pingTime)
-		fmt.Fprintf(c.out,
-			"<iq from='%s' to='%s' id='%x' type='get'><ping xmlns='urn:xmpp:ping'/></iq>",
-			c.jid, domain, c.getCookie())
-	}
+// Ping sends an XMPP ping to the domain this client is connected to.
+func (c *Conn) Ping() {
+	c.SendIQ(c.domain, "get", struct {
+		XMLName xml.Name `xml:"urn:xmpp:ping ping"`
+	}{})
 }
 
 // Tee off a copy of conn to a reader that continually updates the

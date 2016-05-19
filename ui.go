@@ -422,10 +422,14 @@ func main() {
 	info(term, fmt.Sprintf("Your fingerprint is %x", s.privateKey.Fingerprint()))
 
 	ticker := time.NewTicker(1 * time.Second)
+	pingTicker := time.NewTicker(60 * time.Second)
 
 MainLoop:
 	for {
 		select {
+		case <-pingTicker.C:
+			// Send periodic pings so that we can detect connection timeouts.
+			s.conn.Ping()
 		case now := <-ticker.C:
 			haveExpired := false
 			for _, expiry := range s.timeouts {
