@@ -416,7 +416,10 @@ func main() {
 	stanzaChan := make(chan xmpp.Stanza)
 	go s.readMessages(stanzaChan)
 
-	s.privateKey.Parse(config.PrivateKey)
+	if _, ok := s.privateKey.Parse(config.PrivateKey); !ok {
+		alert(term, "Failed to parse private key from config")
+		return
+	}
 	s.timeouts = make(map[xmpp.Cookie]time.Time)
 
 	info(term, fmt.Sprintf("Your fingerprint is %x", s.privateKey.Fingerprint()))
