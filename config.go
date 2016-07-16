@@ -21,6 +21,7 @@ type Config struct {
 	filename                      string `json:"-"`
 	Account                       string
 	Server                        string   `json:",omitempty"`
+	Resource                      string   `json:",omitempty"`
 	Proxies                       []string `json:",omitempty"`
 	Password                      string   `json:",omitempty"`
 	Port                          int      `json:",omitempty"`
@@ -138,6 +139,13 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		}
 		domain = parts[1]
 		break
+	}
+
+	term.SetPrompt("Set resource? (Enter to skip): ")
+	if config.Resource, err = term.ReadLine(); err != nil || len(config.Resource) == 0 {
+		info(term, "No resource set.")
+	} else{
+		info(term, "Resource set to \"" + config.Resource + "\"")
 	}
 
 	const debugLogFile = "/tmp/xmpp-client-debug.log"
