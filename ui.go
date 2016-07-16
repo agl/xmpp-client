@@ -375,7 +375,7 @@ func main() {
 		}
 	}
 
-	conn, err := xmpp.Dial(addr, user, domain, password, xmppConfig)
+	conn, err := xmpp.Dial(addr, user, domain, config.Resource, password, xmppConfig)
 	if err != nil {
 		alert(term, "Failed to connect to XMPP server: "+err.Error())
 		return
