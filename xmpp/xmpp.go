@@ -640,7 +640,7 @@ func Dial(address, user, domain, resource, password string, config *Config) (c *
 	} else {
 		fmt.Fprintf(c.out,
 			"<iq type='set' id='bind_2'><bind xmlns='%s'><resource>%s</resource></bind></iq>",
-			NsBind, resource)
+			NsBind, xmlEscape(resource))
 	}
 
 	var iq ClientIQ
