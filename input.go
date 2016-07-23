@@ -36,6 +36,7 @@ var uiCommands = []uiCommand{
 	{"otr-info", otrInfoCommand{}, "Print OTR information such as OTR fingerprint"},
 	{"otr-start", otrCommand{}, "Start an OTR session with the given user"},
 	{"paste", pasteCommand{}, "Start interpreting text verbatim"},
+	{"priority", priorityCommand{}, "Set priority."},
 	{"quit", quitCommand{}, "Quit the program"},
 	{"rostereditdone", rosterEditDoneCommand{}, "Load the edited roster from disk"},
 	{"rosteredit", rosterEditCommand{}, "Write the roster to disk"},
@@ -112,6 +113,11 @@ type otrCommand struct {
 type otrInfoCommand struct{}
 
 type pasteCommand struct{}
+
+type priorityCommand struct {
+	Priority string
+}
+
 type quitCommand struct{}
 
 type rosterCommand struct {
