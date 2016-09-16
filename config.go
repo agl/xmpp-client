@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/url"
 	"strconv"
@@ -18,27 +19,28 @@ import (
 )
 
 type Config struct {
-	filename                      string `json:"-"`
+	filename                      string    `json:"-"`
 	Account                       string
-	Server                        string   `json:",omitempty"`
-	Resource                      string   `json:",omitempty"`
-	Proxies                       []string `json:",omitempty"`
-	Password                      string   `json:",omitempty"`
-	Port                          int      `json:",omitempty"`
+	Server                        string    `json:",omitempty"`
+	Resource                      string    `json:",omitempty"`
+	Proxies                       []string  `json:",omitempty"`
+	Password                      string    `json:",omitempty"`
+	Port                          int       `json:",omitempty"`
 	PrivateKey                    []byte
 	KnownFingerprints             []KnownFingerprint
-	RawLogFile                    string   `json:",omitempty"`
-	NotifyCommand                 []string `json:",omitempty"`
-	IdleSecondsBeforeNotification int      `json:",omitempty"`
+	RawLogFile                    string    `json:",omitempty"`
+	NotifyCommand                 []string  `json:",omitempty"`
+	IdleSecondsBeforeNotification int       `json:",omitempty"`
+	Verbosity                     verbosity `json:",omitempty"`
 	Bell                          bool
 	HideStatusUpdates             bool
 	UseTor                        bool
 	OTRAutoTearDown               bool
 	OTRAutoAppendTag              bool
 	OTRAutoStartSession           bool
-	ServerCertificateSHA256       string   `json:",omitempty"`
-	AlwaysEncrypt                 bool     `json:",omitempty"`
-	AlwaysEncryptWith             []string `json:",omitempty"`
+	ServerCertificateSHA256       string    `json:",omitempty"`
+	AlwaysEncrypt                 bool      `json:",omitempty"`
+	AlwaysEncryptWith             []string  `json:",omitempty"`
 }
 
 type KnownFingerprint struct {
@@ -46,6 +48,36 @@ type KnownFingerprint struct {
 	FingerprintHex string
 	fingerprint    []byte `json:"-"`
 }
+
+type verbosity int
+const (
+	// default is debugV, because that’s the default int value
+	debugV verbosity = iota
+	infoV
+)
+func (v *verbosity) UnmarshalJSON(b []byte) error {
+	var s string
+	err := json.Unmarshal(b, &s)
+	if err != nil {
+		return err
+	}
+	var m = map[string]verbosity {
+		"debug": debugV,
+		"info" : infoV,
+	}
+	verb, ok := m[s]
+	if ok {
+		*v = verb
+		return nil
+	} else {
+		var keys []string
+		for k := range m {
+			keys = append(keys, k)
+		}
+		return errors.New(fmt.Sprintf("Verbosity: '%s' is not one of %v", s, keys))
+	}
+}
+
 
 func ParseConfig(filename string) (c *Config, err error) {
 	contents, err := ioutil.ReadFile(filename)
