@@ -36,6 +36,12 @@ const (
 	NsBind    = "urn:ietf:params:xml:ns:xmpp-bind"
 	NsSession = "urn:ietf:params:xml:ns:xmpp-session"
 	NsClient  = "jabber:client"
+
+	// ioTimeout is the amount of time permitted between stanzas from the
+	// server. It's up to the user of this package to ensure that the
+	// server will send stanzas sufficiently frequently to satisfy this
+	// timeout. One can use Conn.Ping if needed.
+	ioTimeout = 3 * time.Minute
 )
 
 // RemoveResourceFromJid returns the user@domain portion of a JID.
@@ -65,6 +71,7 @@ type Conn struct {
 	jid     string
 	archive bool
 	domain  string
+	conn    net.Conn // underlying Conn. Used for timeouts.
 
 	lock          sync.Mutex
 	inflights     map[Cookie]inflight
@@ -492,6 +499,7 @@ func Dial(address, user, domain, resource, password string, config *Config) (c *
 	}
 
 	c.in, c.out = makeInOut(conn, config)
+	c.conn = conn
 	c.domain = domain
 
 	features, err := c.getFeatures(domain)
@@ -670,8 +678,6 @@ func Dial(address, user, domain, resource, password string, config *Config) (c *
 	return c, nil
 }
 
-const ioTimeout = 3 * time.Minute
-
 // Ping sends an XMPP ping to the domain this client is connected to.
 func (c *Conn) Ping() {
 	c.SendIQ(c.domain, "get", struct {
@@ -679,30 +685,11 @@ func (c *Conn) Ping() {
 	}{})
 }
 
-// Tee off a copy of conn to a reader that continually updates the
-// read/write deadlines. This allows us to get an i/o timeout when
-// nothing is sent or received for a long time.
-func watchTimeouts(conn net.Conn) io.Reader {
-	pipeReader, pipeWriter := io.Pipe()
-	go func() {
-		var buf [1024]byte
-		for {
-			_, err := pipeReader.Read(buf[:])
-			if err != nil {
-				break
-			}
-			conn.SetDeadline(time.Now().Add(ioTimeout))
-		}
-	}()
-	return io.TeeReader(conn, pipeWriter)
-}
-
-func makeInOut(conn net.Conn, config *Config) (in *xml.Decoder, out io.Writer) {
-	connTee := watchTimeouts(conn)
+func makeInOut(conn io.ReadWriter, config *Config) (in *xml.Decoder, out io.Writer) {
 	if config != nil && config.InLog != nil {
-		in = xml.NewDecoder(io.TeeReader(connTee, config.InLog))
+		in = xml.NewDecoder(io.TeeReader(conn, config.InLog))
 	} else {
-		in = xml.NewDecoder(connTee)
+		in = xml.NewDecoder(conn)
 	}
 
 	if config != nil && config.OutLog != nil {
@@ -932,6 +919,7 @@ func next(c *Conn) (xml.Name, interface{}, error) {
 	if err != nil {
 		return xml.Name{}, nil, err
 	}
+	c.conn.SetDeadline(time.Now().Add(ioTimeout))
 
 	// Put it in an interface and allocate one.
 	var nv interface{}
