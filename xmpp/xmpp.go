@@ -155,8 +155,6 @@ func (c *Conn) Next() (stanza Stanza, err error) {
 
 		return
 	}
-
-	panic("unreachable")
 }
 
 // Cancel cancels and outstanding request. The request's channel is closed.
@@ -736,7 +734,6 @@ func nextStart(p *xml.Decoder) (elem xml.StartElement, err error) {
 			return
 		}
 	}
-	panic("unreachable")
 }
 
 // RFC 3920  C.1  Streams name space
