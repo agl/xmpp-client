@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -63,6 +64,7 @@ type Conn struct {
 	in      *xml.Decoder
 	jid     string
 	archive bool
+	domain  string
 
 	lock          sync.Mutex
 	inflights     map[Cookie]inflight
@@ -490,6 +492,7 @@ func Dial(address, user, domain, resource, password string, config *Config) (c *
 	}
 
 	c.in, c.out = makeInOut(conn, config)
+	c.domain = domain
 
 	features, err := c.getFeatures(domain)
 	if err != nil {
@@ -663,14 +666,43 @@ func Dial(address, user, domain, resource, password string, config *Config) (c *
 			return nil, errors.New("xmpp: session establishment failed")
 		}
 	}
+
 	return c, nil
 }
 
-func makeInOut(conn io.ReadWriter, config *Config) (in *xml.Decoder, out io.Writer) {
+const ioTimeout = 3 * time.Minute
+
+// Ping sends an XMPP ping to the domain this client is connected to.
+func (c *Conn) Ping() {
+	c.SendIQ(c.domain, "get", struct {
+		XMLName xml.Name `xml:"urn:xmpp:ping ping"`
+	}{})
+}
+
+// Tee off a copy of conn to a reader that continually updates the
+// read/write deadlines. This allows us to get an i/o timeout when
+// nothing is sent or received for a long time.
+func watchTimeouts(conn net.Conn) io.Reader {
+	pipeReader, pipeWriter := io.Pipe()
+	go func() {
+		var buf [1024]byte
+		for {
+			_, err := pipeReader.Read(buf[:])
+			if err != nil {
+				break
+			}
+			conn.SetDeadline(time.Now().Add(ioTimeout))
+		}
+	}()
+	return io.TeeReader(conn, pipeWriter)
+}
+
+func makeInOut(conn net.Conn, config *Config) (in *xml.Decoder, out io.Writer) {
+	connTee := watchTimeouts(conn)
 	if config != nil && config.InLog != nil {
-		in = xml.NewDecoder(io.TeeReader(conn, config.InLog))
+		in = xml.NewDecoder(io.TeeReader(connTee, config.InLog))
 	} else {
-		in = xml.NewDecoder(conn)
+		in = xml.NewDecoder(connTee)
 	}
 
 	if config != nil && config.OutLog != nil {
