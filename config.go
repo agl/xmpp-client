@@ -202,7 +202,6 @@ func enroll(config *Config, term *terminal.Terminal) bool {
 		"riseup.net":                "4cjw6cwpeaeppfqz.onion",
 		"jabber.calyxinstitute.org": "ijeeynrc6x2uy5ob.onion",
 		"jabber.otr.im":             "5rgdtlawqkcplz75.onion",
-		"wtfismyip.com":             "ofkztxcohimx34la.onion",
 		"rows.io":                   "yz6yiv2hxyagvwy6.onion",
 	}
 
