@@ -98,6 +98,12 @@ func terminalMessage(term *terminal.Terminal, color []byte, msg string, critical
 	term.Write(line)
 }
 
+func debug(v verbosity, term *terminal.Terminal, msg string) {
+	if v == debugV {
+		terminalMessage(term, term.Escape.White, msg, false)
+	}
+}
+
 func info(term *terminal.Terminal, msg string) {
 	terminalMessage(term, term.Escape.Blue, msg, false)
 }
@@ -772,7 +778,7 @@ func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
 		}
 		return xmpp.EmptyReply{}
 	default:
-		info(s.term, "Unknown IQ: "+startElem.Name.Space+" "+startElem.Name.Local)
+		debug(s.config.Verbosity, s.term, "Unknown IQ: "+startElem.Name.Space+" "+startElem.Name.Local)
 	}
 
 	return nil
