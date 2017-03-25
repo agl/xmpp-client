@@ -565,6 +565,12 @@ MainLoop:
 				s.handleConfirmOrDeny(cmd.User, false /* deny */)
 			case addCommand:
 				s.conn.SendPresence(cmd.User, "subscribe", "" /* generate id */)
+			case joinCommand:
+				info(s.term, fmt.Sprintf("Warning: OTR is ***NOT SUPPORTED*** for Multi-User-Chats"))
+				s.conn.JoinMUC(cmd.User, "", "")
+			case leaveCommand:
+				s.conn.LeaveMUC(cmd.User)
+
 			case msgCommand:
 				conversation, ok := s.conversations[cmd.to]
 				isEncrypted := ok && conversation.IsEncrypted()
@@ -595,6 +601,7 @@ MainLoop:
 				} else {
 					msgs = [][]byte{[]byte(message)}
 				}
+
 				for _, message := range msgs {
 					s.conn.Send(cmd.to, string(message))
 				}
@@ -937,6 +944,12 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 				detectedOTRVersion = 3
 			}
 		}
+	}
+
+	// MultiParty OTR does not exist yet unfortunately
+	// Thus do not note we are going to try it
+	if stanza.Type == "groupchat" {
+		detectedOTRVersion = 0
 	}
 
 	if s.config.OTRAutoStartSession && detectedOTRVersion >= 2 {
