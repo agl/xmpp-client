@@ -519,7 +519,7 @@ MainLoop:
 					line := ""
 					if ok {
 						line += "[*] "
-					} else if cmd.OnlineOnly {
+					} else if !cmd.AllContacts {
 						continue
 					} else {
 						line += "[ ] "
