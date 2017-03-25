@@ -118,6 +118,8 @@ type Session struct {
 	account string
 	conn    *xmpp.Conn
 	term    *terminal.Terminal
+	//I don't know where to put this variable
+	state   string
 	roster  []xmpp.RosterEntry
 	input   Input
 	// conversations maps from a JID (without the resource) to an OTR
@@ -384,6 +386,7 @@ func main() {
 	s := Session{
 		account:           config.Account,
 		conn:              conn,
+		state:             "",
 		term:              term,
 		conversations:     make(map[string]*otr.Conversation),
 		knownStates:       make(map[string]string),
@@ -404,7 +407,7 @@ func main() {
 		return
 	}
 
-	conn.SignalPresence("")
+	conn.SignalPresence(s.state, s.config.Priority)
 
 	s.input = Input{
 		term:        term,
@@ -650,21 +653,35 @@ MainLoop:
 				s.config.Save()
 				info(s.term, fmt.Sprintf("Saved manually verified fingerprint %s for %s", cmd.Fingerprint, cmd.User))
 			case awayCommand:
-				s.conn.SignalPresence("away")
+				s.state="away"
+				s.conn.SignalPresence("away", s.config.Priority)
 			case chatCommand:
-				s.conn.SignalPresence("chat")
+				s.state="chat"
+				s.conn.SignalPresence("chat", s.config.Priority)
 			case dndCommand:
-				s.conn.SignalPresence("dnd")
+				s.state="dnd"
+				s.conn.SignalPresence("dnd", s.config.Priority)
 			case xaCommand:
-				s.conn.SignalPresence("xa")
+				s.state="xa"
+				s.conn.SignalPresence("xa", s.config.Priority)
 			case onlineCommand:
-				s.conn.SignalPresence("")
+				s.state=""
+				s.conn.SignalPresence("", s.config.Priority)
 			case ignoreCommand:
 				s.ignoreUser(cmd.User)
 			case unignoreCommand:
 				s.unignoreUser(cmd.User)
 			case ignoreListCommand:
 				s.ignoreList()
+			case priorityCommand:
+				Priority, err := strconv.ParseInt(cmd.Priority, 10, 8)
+				if err != nil {
+					alert(s.term, fmt.Sprintf("Error setting priority to %s", cmd.Priority))
+					break
+				}
+				s.config.Priority = int8(Priority)
+				s.conn.SignalPresence(s.state, s.config.Priority)
+				info(s.term, fmt.Sprintf("Set priority to %d for the duration of this session", Priority))
 			}
 		case rawStanza, ok := <-stanzaChan:
 			if !ok {
