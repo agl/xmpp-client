@@ -11,6 +11,10 @@
   #include <abstractions/consoles>
   #include <abstractions/ssl_certs>
 
+  # Define additional allow rules for NotificationCommand binaries
+  # in a local override rule file.
+  #include <local/xmpp-client_notifiers
+
   # IPv4 TCP
   network inet stream,
   # We disable the following to enforce Tor usage
@@ -26,6 +30,9 @@
 
   # Allow reading of libs and /tmp
   /etc/ld.so.cache r,
+
+  # Needed for NotifyCommand's stdin/out/err
+  /dev/null rw,
 
   # Random number generation requires these two
   /dev/random r,
