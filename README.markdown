@@ -1,5 +1,6 @@
 xmpp-client setup
 =================
+Make sure you have [Go](https://golang.org/doc/install) and [Mercurial](https://en.wikipedia.org/wiki/Mercurial) installed, then run:
 
     go get github.com/agl/xmpp-client
 
