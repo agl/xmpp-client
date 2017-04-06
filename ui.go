@@ -94,6 +94,7 @@ func terminalMessage(term *terminal.Terminal, color []byte, msg string, critical
 	if critical {
 		line = append(line, term.Escape.Reset...)
 	}
+	line = append(line, '\r')
 	line = append(line, '\n')
 	term.Write(line)
 }
@@ -214,7 +215,7 @@ func main() {
 	if len(*configFile) == 0 {
 		homeDir := os.Getenv("HOME")
 		if len(homeDir) == 0 {
-			alert(term, "$HOME not set. Please either export $HOME or use the -config-file option.\n")
+			alert(term, "$HOME not set. Please either export $HOME or use the -config-file option.\r\n")
 			return
 		}
 		persistentDir := filepath.Join(homeDir, "Persistent")
@@ -705,7 +706,7 @@ MainLoop:
 		}
 	}
 
-	os.Stdout.Write([]byte("\n"))
+	os.Stdout.Write([]byte("\r\n"))
 }
 
 func (s *Session) processIQ(stanza *xmpp.ClientIQ) interface{} {
@@ -976,6 +977,7 @@ func (s *Session) processClientMessage(stanza *xmpp.ClientMessage) {
 	line = append(line, []byte(t)...)
 	line = append(line, s.term.Escape.Reset...)
 	line = appendTerminalEscaped(line, stripHTML(out))
+	line = append(line, '\r')
 	line = append(line, '\n')
 	if s.config.Bell {
 		line = append(line, '\a')
@@ -1073,6 +1075,7 @@ func (s *Session) processPresence(stanza *xmpp.ClientPresence) {
 		}
 		line = append(line, ' ')
 		line = append(line, []byte(stanza.Status)...)
+		line = append(line, '\r')
 		line = append(line, '\n')
 		s.term.Write(line)
 	}
@@ -1550,7 +1553,7 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 			return
 		}
 
-		write("The following media blobs have been provided by the server with this question:\n")
+		write("The following media blobs have been provided by the server with this question:\r\n")
 		for i, media := range medias {
 			for j, rep := range media {
 				if j == 0 {
@@ -1560,7 +1563,7 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 				}
 				write(fmt.Sprintf("Data of type %s", formStringForPrinting(rep.MIMEType)))
 				if len(rep.URI) > 0 {
-					write(fmt.Sprintf(" at %s\n", formStringForPrinting(rep.URI)))
+					write(fmt.Sprintf(" at %s\r\n", formStringForPrinting(rep.URI)))
 					continue
 				}
 
@@ -1575,7 +1578,7 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 				if len(tmpDir) == 0 {
 					var err error
 					if tmpDir, err = ioutil.TempDir("", "xmppclient"); err != nil {
-						write(", but failed to create temporary directory in which to save it: " + err.Error() + "\n")
+						write(", but failed to create temporary directory in which to save it: " + err.Error() + "\r\n")
 						continue
 					}
 				}
@@ -1586,40 +1589,40 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 				}
 				out, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 				if err != nil {
-					write(", but failed to create file in which to save it: " + err.Error() + "\n")
+					write(", but failed to create file in which to save it: " + err.Error() + "\r\n")
 					continue
 				}
 				out.Write(rep.Data)
 				out.Close()
 
-				write(", saved in " + filename + "\n")
+				write(", saved in " + filename + "\r\n")
 			}
 		}
 
-		write("\n")
+		write("\r\n")
 	}
 
 	var err error
 	if len(title) > 0 {
-		write(fmt.Sprintf("Title: %s\n", formStringForPrinting(title)))
+		write(fmt.Sprintf("Title: %s\r\n", formStringForPrinting(title)))
 	}
 	if len(instructions) > 0 {
-		write(fmt.Sprintf("Instructions: %s\n", formStringForPrinting(instructions)))
+		write(fmt.Sprintf("Instructions: %s\r\n", formStringForPrinting(instructions)))
 	}
 
 	questionNumber := 0
 	for _, field := range fields {
 		questionNumber++
-		write("\n")
+		write("\r\n")
 
 		switch field := field.(type) {
 		case *xmpp.FixedFormField:
 			write(formStringForPrinting(field.Text))
-			write("\n")
+			write("\r\n")
 			questionNumber--
 
 		case *xmpp.BooleanFormField:
-			write(fmt.Sprintf("%d. %s\n\n", questionNumber, formStringForPrinting(field.Label)))
+			write(fmt.Sprintf("%d. %s\r\n\r\n", questionNumber, formStringForPrinting(field.Label)))
 			showMediaEntries(questionNumber, field.Media)
 			term.SetPrompt("Please enter yes, y, no or n: ")
 
@@ -1651,7 +1654,7 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 					// we support embedded media and it's confusing
 					// to ask the question, so we just print the
 					// URL.
-					write(fmt.Sprintf("CAPTCHA web page (only if not provided below): %s\n", formStringForPrinting(field.Default)))
+					write(fmt.Sprintf("CAPTCHA web page (only if not provided below): %s\r\n", formStringForPrinting(field.Default)))
 					questionNumber--
 					continue
 				}
@@ -1667,11 +1670,11 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 				continue
 			}
 
-			write(fmt.Sprintf("%d. %s\n\n", questionNumber, formStringForPrinting(field.Label)))
+			write(fmt.Sprintf("%d. %s\r\n\r\n", questionNumber, formStringForPrinting(field.Label)))
 			showMediaEntries(questionNumber, field.Media)
 
 			if len(field.Default) > 0 {
-				write(fmt.Sprintf("Please enter response or leave blank for the default, which is '%s'\n", formStringForPrinting(field.Default)))
+				write(fmt.Sprintf("Please enter response or leave blank for the default, which is '%s'\r\n", formStringForPrinting(field.Default)))
 			} else {
 				write("Please enter response")
 			}
@@ -1689,10 +1692,10 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 			}
 
 		case *xmpp.MultiTextFormField:
-			write(fmt.Sprintf("%d. %s\n\n", questionNumber, formStringForPrinting(field.Label)))
+			write(fmt.Sprintf("%d. %s\r\n\r\n", questionNumber, formStringForPrinting(field.Label)))
 			showMediaEntries(questionNumber, field.Media)
 
-			write("Please enter one or more responses, terminated by an empty line\n")
+			write("Please enter one or more responses, terminated by an empty line\r\n")
 			term.SetPrompt("> ")
 
 			for {
@@ -1707,11 +1710,11 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 			}
 
 		case *xmpp.SelectionFormField:
-			write(fmt.Sprintf("%d. %s\n\n", questionNumber, formStringForPrinting(field.Label)))
+			write(fmt.Sprintf("%d. %s\r\n\r\n", questionNumber, formStringForPrinting(field.Label)))
 			showMediaEntries(questionNumber, field.Media)
 
 			for i, opt := range field.Values {
-				write(fmt.Sprintf("  %d. %s\n\n", i+1, formStringForPrinting(opt)))
+				write(fmt.Sprintf("  %d. %s\r\n\r\n", i+1, formStringForPrinting(opt)))
 			}
 			term.SetPrompt("Please enter the number of your selection: ")
 
@@ -1733,11 +1736,11 @@ func promptForForm(term *terminal.Terminal, user, password, title, instructions 
 			}
 
 		case *xmpp.MultiSelectionFormField:
-			write(fmt.Sprintf("%d. %s\n\n", questionNumber, formStringForPrinting(field.Label)))
+			write(fmt.Sprintf("%d. %s\r\n\r\n", questionNumber, formStringForPrinting(field.Label)))
 			showMediaEntries(questionNumber, field.Media)
 
 			for i, opt := range field.Values {
-				write(fmt.Sprintf("  %d. %s\n\n", i+1, formStringForPrinting(opt)))
+				write(fmt.Sprintf("  %d. %s\r\n\r\n", i+1, formStringForPrinting(opt)))
 			}
 			term.SetPrompt("Please enter the numbers of zero or more of the above, separated by spaces: ")
 
